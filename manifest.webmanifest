@@ -1,0 +1,17 @@
+{
+  "name": "Coach",
+  "short_name": "Coach",
+  "description": "La tua giornata: attività, routine, spesa, soldi, tutto in un posto",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#E6E8E3",
+  "theme_color": "#1F6F63",
+  "lang": "it",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
