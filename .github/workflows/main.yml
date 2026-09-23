@@ -3,6 +3,9 @@ name: Costruisci l'APK
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   apk:
     runs-on: ubuntu-latest
@@ -26,7 +29,6 @@ jobs:
           sed -i "s/appcompat:1.7.0/appcompat:1.6.1/" app/build.gradle
           printf '\nconfigurations.all {\n    exclude group: %s, module: %s\n}\n' "'androidx.annotation'" "'annotation-jvm'" >> app/build.gradle
           echo "sdk.dir=$ANDROID_HOME" > local.properties
-          echo "--- app/build.gradle ---"; cat app/build.gradle
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -34,12 +36,14 @@ jobs:
 
       - name: Compilo
         working-directory: coach-repo/android
-        run: gradle assembleDebug --no-daemon 2>&1 | tee /tmp/build.log
+        run: gradle assembleDebug --no-daemon
 
-      - name: Se è andata male, scrivo l'errore qui
-        if: failure()
+      - name: Pubblico il link per scaricarlo
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          {
-            echo "## ERRORE"
-            echo '```'
-            sed -n '/FAILURE: Build failed/,/^\* Tr
+          cp coach-repo/android/app/build/outputs/apk/debug/app-debug.apk ./Coach.apk
+          gh release delete apk --yes --cleanup-tag || true
+          gh release create apk ./Coach.apk --title "Coach" --notes "Ultima versione dell'app"
+          echo "## Scarica qui" >> $GITHUB_STEP_SUMMARY
+          echo "https://github.com/${{ github.repository }}/releases/download/apk/Coach.apk" >> $GITHUB_STEP_SUMMARY
