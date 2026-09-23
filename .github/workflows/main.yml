@@ -8,23 +8,43 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-      - name: Apro il pacchetto e metto l'indirizzo
+
+      - name: Preparo il progetto
         run: |
           unzip -q coach-pacchetto.zip
+          cd coach-repo/android
           SITO="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
-          echo "Aprirà $SITO"
-          sed -i "s|https://ESEMPIO.github.io/coach/|$SITO|" coach-repo/android/app/src/main/res/values/strings.xml
-          cat coach-repo/android/app/src/main/res/values/strings.xml
+          sed -i "s|https://ESEMPIO.github.io/coach/|$SITO|" app/src/main/res/values/strings.xml
+          sed -i "s/version '8.7.3'/version '8.5.2'/" build.gradle
+          sed -i "s/compileSdk 35/compileSdk 34/; s/targetSdk 35/targetSdk 34/" app/build.gradle
+          echo "--- strings.xml ---"; cat app/src/main/res/values/strings.xml
+          echo "--- build.gradle ---"; cat build.gradle app/build.gradle
+
+      - name: Strumenti Android
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0" >/dev/null || true
+
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.14.3'
+          gradle-version: '8.9'
+
       - name: Compilo
         working-directory: coach-repo/android
-        run: gradle assembleDebug --no-daemon --stacktrace
+        run: |
+          set -o pipefail
+          gradle assembleDebug --no-daemon 2>&1 | tee /tmp/build.log || {
+            echo "=============== ERRORE, ECCO IL PEZZO CHE SERVE ==============="
+            grep -n -E "error:|FAILURE:|What went wrong|Caused by|Could not|> " /tmp/build.log | tail -40
+            echo "=============== FINE ==============="
+            exit 1
+          }
+
       - uses: actions/upload-artifact@v4
         with:
           name: Coach-APK
