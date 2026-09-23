@@ -1159,7 +1159,7 @@ function renderOggi(){
         : `<div class="empty">Niente in programma oggi. Aggiungi un'attività dalla scheda Attività.</div>`}
     </div>
 
-    <div style="text-align:center;font-size:11.5px;color:var(--ink-faint);padding:18px 0 4px">versione 24</div>
+    <div style="text-align:center;font-size:11.5px;color:var(--ink-faint);padding:18px 0 4px">versione 25</div>
   </div>`;
 
   bindAll();
@@ -4457,7 +4457,10 @@ function renderOpzioni(){
         </div>
         <input type="time" id="op-sveglia" value="${S.wake || "07:00"}" style="width:112px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface)">
       </div>
-      <div class="row"><button class="btn wide" id="op-metti-sveglia">Metti la sveglia</button></div>
+      <div class="row" style="gap:9px">
+        <button class="btn" id="op-metti-sveglia" style="flex:1">Metti la sveglia</button>
+        <button class="btn" id="op-prova" style="flex:1">Prova una notifica</button>
+      </div>
       <div class="row">
         <div class="rbody">
           <div class="rtitle">Permesso per gli orari esatti</div>
@@ -4570,8 +4573,11 @@ function renderOpzioni(){
   const mettiSv = q("op-metti-sveglia");
   if (mettiSv) mettiSv.onclick = () => {
     const ora = q("op-sveglia") ? q("op-sveglia").value : S.wake;
-    if (!svegliaTelefono(ora, "Coach")) alert("La sveglia si mette dall'app Android.");
+    if (!svegliaTelefono(ora, "Coach"))
+      alert("Non sono riuscito ad aprire l'orologio del telefono.");
   };
+  const prova = q("op-prova");
+  if (prova) prova.onclick = () => provaNotifica();
   const esatte = q("op-esatte");
   if (esatte) esatte.onclick = () => { try { NAT.apriImpostazioniSveglie(); } catch(e){} };
 
@@ -5718,7 +5724,20 @@ function riprogrammaAvvisi(){
 function svegliaTelefono(hhmm, etichetta){
   if (!inApp()) return false;
   const [h,m] = (hhmm || "07:00").split(":").map(Number);
-  try { NAT.sveglia(h, m, etichetta || "Coach"); return true; } catch(e){ return false; }
+  try {
+    const r = NAT.sveglia(h, m, etichetta || "Coach");
+    return r === undefined ? true : !!r;      // le prime versioni non rispondevano
+  } catch(e){ return false; }
+}
+
+// una notifica di prova fra dieci secondi, per vedere se il ponte regge
+function provaNotifica(){
+  if (!inApp()){ alert("Le notifiche arrivano solo dentro l'app Android."); return; }
+  try {
+    NAT.programma("prova-" + Date.now(), "Prova del Coach",
+      "Se leggi questa, le notifiche funzionano.", Date.now() + 10000, true);
+    alert("Fatto. Fra dieci secondi dovrebbe arrivare: non toccare altro nel frattempo.\nPuoi anche chiudere l'app, arriva lo stesso.");
+  } catch(e){ alert("Non ci riesco: " + e); }
 }
 
 function timerTelefono(minuti, etichetta){
