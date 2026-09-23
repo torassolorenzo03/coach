@@ -1,4 +1,4 @@
-name: Costruisci l'APK
+name: APK firmato
 
 on:
   workflow_dispatch:
