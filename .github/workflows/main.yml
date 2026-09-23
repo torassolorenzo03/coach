@@ -23,11 +23,10 @@ jobs:
           sed -i "s/version '8.7.3'/version '8.5.2'/" build.gradle
           sed -i "s/compileSdk 35/compileSdk 34/; s/targetSdk 35/targetSdk 34/" app/build.gradle
           sed -i "/androidx.webkit/d; /androidx.core:core/d" app/build.gradle
+          sed -i "s/appcompat:1.7.0/appcompat:1.6.1/" app/build.gradle
+          printf '\nconfigurations.all {\n    exclude group: %s, module: %s\n}\n' "'androidx.annotation'" "'annotation-jvm'" >> app/build.gradle
           echo "sdk.dir=$ANDROID_HOME" > local.properties
-          echo "## Dipendenze usate" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          sed -n '/dependencies/,$p' app/build.gradle >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "--- app/build.gradle ---"; cat app/build.gradle
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -35,9 +34,12 @@ jobs:
 
       - name: Compilo
         working-directory: coach-repo/android
+        run: gradle assembleDebug --no-daemon 2>&1 | tee /tmp/build.log
+
+      - name: Se è andata male, scrivo l'errore qui
+        if: failure()
         run: |
-          set +e
-          gradle assembleDebug --no-daemon > /tmp/build.log 2>&1
-          CODE=$?
-          if [ $CODE -ne 0 ]; then
-            {
+          {
+            echo "## ERRORE"
+            echo '```'
+            sed -n '/FAILURE: Build failed/,/^\* Tr
