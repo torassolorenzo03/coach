@@ -1,0 +1,50 @@
+name: Costruisci l'APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Chiave di firma fissa
+        run: |
+          mkdir -p ~/.android
+          echo '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' | base64 -d > ~/.android/debug.keystore
+          ls -la ~/.android/debug.keystore
+
+      - name: Preparo il progetto
+        run: |
+          unzip -q coach-pacchetto.zip
+          cd coach-repo/android
+          SITO="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
+          sed -i "s|https://ESEMPIO.github.io/coach/|$SITO|" app/src/main/res/values/strings.xml
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Compilo
+        working-directory: coach-repo/android
+        run: gradle assembleDebug --no-daemon
+
+      - name: Pubblico il link per scaricarlo
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp coach-repo/android/app/build/outputs/apk/debug/app-debug.apk ./Coach.apk
+          gh release delete apk --yes --cleanup-tag || true
+          gh release create apk ./Coach.apk --title "Coach" --notes "Ultima versione"
+          echo "## Scarica qui" >> $GITHUB_STEP_SUMMARY
+          echo "https://github.com/${{ github.repository }}/releases/download/apk/Coach.apk" >> $GITHUB_STEP_SUMMARY
