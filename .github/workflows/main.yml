@@ -22,14 +22,12 @@ jobs:
           sed -i "s|https://ESEMPIO.github.io/coach/|$SITO|" app/src/main/res/values/strings.xml
           sed -i "s/version '8.7.3'/version '8.5.2'/" build.gradle
           sed -i "s/compileSdk 35/compileSdk 34/; s/targetSdk 35/targetSdk 34/" app/build.gradle
-          sed -i "/androidx.webkit/d" app/build.gradle
+          sed -i "/androidx.webkit/d; /androidx.core:core/d" app/build.gradle
           echo "sdk.dir=$ANDROID_HOME" > local.properties
-          {
-            echo "## Diagnostica"
-            echo "- ANDROID_HOME: \`$ANDROID_HOME\`"
-            echo "- Java: \`$(java -version 2>&1 | head -1)\`"
-            echo "- Sito: \`$SITO\`"
-          } >> $GITHUB_STEP_SUMMARY
+          echo "## Dipendenze usate" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          sed -n '/dependencies/,$p' app/build.gradle >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -39,24 +37,7 @@ jobs:
         working-directory: coach-repo/android
         run: |
           set +e
-          gradle assembleDebug --no-daemon --stacktrace > /tmp/build.log 2>&1
+          gradle assembleDebug --no-daemon > /tmp/build.log 2>&1
           CODE=$?
           if [ $CODE -ne 0 ]; then
             {
-              echo "## ERRORE — manda a Claude questo pezzo"
-              echo '```'
-              grep -E "FAILURE:|What went wrong|^\* |^> |error:|Caused by|Could not|not found" /tmp/build.log | head -25
-              echo ''
-              echo '--- ultime righe ---'
-              tail -25 /tmp/build.log
-              echo '```'
-            } >> $GITHUB_STEP_SUMMARY
-          fi
-          tail -40 /tmp/build.log
-          exit $CODE
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Coach-APK
-          path: coach-repo/android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
