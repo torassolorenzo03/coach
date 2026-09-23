@@ -1,5 +1,5 @@
 /* Il guardiano offline: tiene una copia dell'app e la serve anche senza rete. */
-const VERSIONE = "coach-v1";
+const VERSIONE = "coach-v2";
 const ROBA = ["./", "./index.html", "./manifest.webmanifest",
               "./icon-192.png", "./icon-512.png"];
 
@@ -22,9 +22,9 @@ self.addEventListener("fetch", e => {
   if (url.origin !== location.origin) return;   // le chiamate a internet passano dirette
 
   if (r.mode === "navigate"){
-    // la pagina: prima la rete (così gli aggiornamenti arrivano), poi la copia
+    // la pagina: sempre dalla rete saltando ogni copia vecchia, poi la copia di scorta
     e.respondWith(
-      fetch(r).then(risposta => {
+      fetch("./index.html", { cache: "reload" }).then(risposta => {
         const copia = risposta.clone();
         caches.open(VERSIONE).then(c => c.put("./index.html", copia));
         return risposta;
