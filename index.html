@@ -270,6 +270,9 @@ nav{position:fixed;left:0;right:0;bottom:0;background:color-mix(in srgb,var(--bg
 .segline input{flex:1}
 .segline button{border:1px solid var(--line);background:var(--surface);border-radius:9px;
   width:42px;height:42px;flex:0 0 42px;color:var(--warn);font-size:19px;line-height:1;padding:0}
+/* i bottoni con una parola dentro (Aggiungi, Segna, Sposta lì) non devono restare quadratini */
+.segline button.btn{width:auto;height:auto;flex:0 0 auto;padding:11px 15px;font-size:14.5px;line-height:1.2;color:var(--ink)}
+.segline button.btn.primary{color:var(--accent-ink)}
 .totline{font-size:13px;color:var(--ink-soft);margin-top:4px}
 </style>
 </head>
@@ -332,9 +335,9 @@ const DEFAULT_STATE = {
   ],
   activities: [
     { id:"a1", name:"Pulire casa", cat:"Casa", imp:1, dur:60,
-      rec:{type:"weekly", n:1}, days:[1,3],
-      win:{start:"21:00", end:"22:00"}, maxDays:3,
-      scheduledFor:null, lastDone:null, moved:null, streak:0, doneCount:0, skipCount:0 }
+      rec:{type:"weekly", n:1}, days:[3],
+      win:{start:"21:00", end:"22:00"}, from:null,
+      moves:{}, skips:{}, handled:{}, lastDone:null, doneCount:0, skipCount:0 }
   ],
   routines: [
     { id:"r1", name:"Mattina", start:"06:00", end:"11:00", items:[
@@ -457,6 +460,7 @@ let S = null;
 let TAB = "oggi";
 let DB = null;
 const LS_KEY = "coach.state.v1";
+const VERSIONE_APP = 26;
 
 async function loadState(){
   let local = null;
@@ -481,6 +485,8 @@ async function loadState(){
 }
 
 function migrate(){
+  if (!S.activities) S.activities = [];
+  if (!S.fixed) S.fixed = [];
   if (!S.cycles) S.cycles = [];
   if (!S.routines) S.routines = structuredClone(DEFAULT_STATE.routines);
   if (!S.rlog) S.rlog = {};
@@ -545,7 +551,45 @@ function migrate(){
   if (!S.tlog) S.tlog = {};
   if (!S.log) S.log = {};
   if (!S.notices) S.notices = [];
+
+  // versione 26: la segretaria. Le attività hanno giorni fissi, niente più ricerca automatica.
+  const T0 = today();
+  S.activities.forEach(a => {
+    if (!a.rec) a.rec = { type:"weekly", n:1 };
+    if (a.rec.type === "timesWeek") a.rec = { type:"weekly", n:1 };
+    if (!a.days || !a.days.length) a.days = [0,1,2,3,4,5,6];
+    if (a.rec.type === "once" && !a.rec.date) a.rec.date = a.scheduledFor || T0;
+    if (!a.from) a.from = a.rec.type === "once" ? a.rec.date : T0;   // i giri contano da quando c'è il nuovo motore
+    if (!a.moves) a.moves = {};
+    if (!a.skips) a.skips = {};
+    if (!a.handled) a.handled = {};
+    if (!a.win) a.win = { start:"21:00", end:"22:00" };
+    delete a.scheduledFor; delete a.moved; delete a.maxDays;
+  });
+  if (!S.gcx) S.gcx = {};              // i dettagli che aggiungi agli eventi di Google Calendar
+  if (!S.gcalOff) S.gcalOff = [];      // i calendari del telefono da non leggere
+  if (!S.gcalSeen) S.gcalSeen = {};    // gli eventi di Google già visti, per dirti quelli nuovi
+  if (S.push.attivita === undefined) S.push.attivita = true;
+  if (!S.avvisiDef) S.avvisiDef = structuredClone(AVVISI_DEF);
+  for (const k in AVVISI_DEF) if (!S.avvisiDef[k]) S.avvisiDef[k] = structuredClone(AVVISI_DEF[k]);
+  // i vecchi "avvisami N giorni prima" diventano avvisi veri
+  S.oneoffs.forEach(o => { if (!o.avviso && o.warn > 0) o.avviso = { giorni:[o.warn], ora:"09:00", prima: 30 }; });
+  S.bills.forEach(b => { if (!b.avviso && b.warn >= 0) b.avviso = { giorni:[b.warn], ora:"09:00" }; });
+  S.trips.forEach(t => { if (!t.docs) t.docs = []; });
+  S.goals.forEach(g => { if (!g.per) g.per = "w"; });
 }
+
+/* Quando arrivano gli avvisi, se non scegli niente di diverso per una voce.
+   giorni: quanti giorni prima (0 = il giorno stesso); ora: a che ora;
+   prima: per gli eventi con orario, quanti minuti prima dell'inizio. */
+const AVVISI_DEF = {
+  evento:      { giorni:[],     ora:"09:00", prima:30 },
+  pagamento:   { giorni:[3, 0], ora:"09:00" },
+  scadenzaInv: { giorni:[30, 7], ora:"09:00" },
+  uscita:      { giorni:[3],    ora:"09:00" },
+  obiettivo:   { giorni:[3, 0], ora:"09:00" },
+  conti:       { giorni:[1],    ora:"09:00" }
+};
 
 let saveTimer = null;
 function save(){
@@ -561,15 +605,15 @@ function save(){
 }
 
 /* ============================================================
-   3. THE ENGINE
-   Finds, for each activity, the first day that is:
-     - in its allowed weekdays
-     - has enough free room inside its time window
-   and moves it forward when a day is missed, within its limit.
+   3. IL MOTORE — la segretaria
+   Le attività cadono nei giorni che hai scelto tu. Il motore non sposta
+   niente da solo: quando una cosa resta indietro la mette fra quelle
+   "da ridecidere" e ti propone due o tre giorni, dicendoti perché.
+   Decidi sempre tu.
    ============================================================ */
 
 // Everything that occupies the day: recurring commitments, one-off ones,
-// and — when switched on — the events read from Google Calendar.
+// and the events read from Google Calendar on the phone.
 function busyLabeled(dateStr){
   const d = dow(dateStr);
   const out = S.fixed.filter(f => f.days.includes(d))
@@ -582,8 +626,10 @@ function busyLabeled(dateStr){
     const b = dateStr === fine ? toMin(o.end) : 1439;
     if (b > a) out.push({ s:a, e:b, label:o.label, src:"singolo" });
   }
-  if (S.gcalOn) for (const g of (GCAL.byDay[dateStr] || []))
+  if (S.gcalOn) for (const g of (GCAL.byDay[dateStr] || [])){
+    if (!gcBusy(g)) continue;
     out.push({ s: g.s, e: g.e, label: g.label, src: "gcal" });
+  }
   return out.sort((a,b) => a.s - b.s);
 }
 
@@ -601,91 +647,142 @@ function busyOn(dateStr){
 
 // Largest free run (minutes) inside [winStart, winEnd] on that date.
 function freeRoom(dateStr, win){
-  const a = toMin(win.start), b = toMin(win.end);
+  let a = toMin(win.start);
+  const b = toMin(win.end);
+  if (dateStr === today()) a = Math.max(a, nowMin());     // oggi conta solo il tempo che resta
+  if (b <= a) return 0;
   let cuts = busyOn(dateStr).map(([s,e]) => [Math.max(s,a), Math.min(e,b)]).filter(([s,e]) => e > s);
   let best = 0, cursor = a;
   for (const [s,e] of cuts){ best = Math.max(best, s - cursor); cursor = Math.max(cursor, e); }
   return Math.max(best, b - cursor);
 }
 
-function dayWorks(dateStr, act){
-  if (!act.days.includes(dow(dateStr))) return false;
-  return freeRoom(dateStr, act.win) >= act.dur;
+/* ---------- quando capita un'attività ----------
+   Ogni attività ha i suoi giri: giorni fissi della settimana, ogni tot giorni
+   da una data, un giorno del mese, date dell'anno, oppure una volta sola.
+   Un giro si può spostare (moves) o saltare (skips): sempre per scelta tua. */
+const maxD = (a, b) => a > b ? a : b;
+const actFrom = a => a.from || "2000-01-01";
+
+function mondayOf(d){ const x = fromIso(d); x.setDate(x.getDate() - ((x.getDay()+6)%7)); return iso(x); }
+function monthsBetween(a, b){
+  const A = fromIso(a), B = fromIso(b);
+  return (B.getFullYear() - A.getFullYear()) * 12 + B.getMonth() - A.getMonth();
+}
+function isLeap(y){ return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0; }
+function mdMatch(md, d){
+  if (d.slice(5) === md) return true;
+  // il 29 febbraio, negli anni che non ce l'hanno, diventa il 28
+  return md === "02-29" && d.slice(5) === "02-28" && !isLeap(+d.slice(0,4));
 }
 
-/* ---------- ricorrenze legate al calendario ----------
-   Alcune cose non capitano "ogni tot giorni" ma in date precise: il cambio
-   gomme a marzo e a ottobre, un compleanno, la rata del 15 del mese.
-   Quelle non cercano un giorno libero: la data è la data. */
-const DATE_REC = ["dates", "yearly", "monthly"];
-const isDateRec = act => DATE_REC.includes(act.rec && act.rec.type);
-const mdOf = d => d.slice(5);
+// Il giorno d è un giro "naturale" dell'attività, prima di spostamenti e salti?
+function nativeOn(a, d){
+  if (d < actFrom(a)) return false;
+  const r = a.rec || { type:"weekly", n:1 };
+  const n = Math.max(1, +r.n || 1);
+  const anchor = r.start || actFrom(a);
+  switch (r.type){
+    case "once":  return d === r.date;
+    case "weekly": {
+      if (!(a.days || []).includes(dow(d))) return false;
+      if (n === 1) return true;
+      const w = Math.round(daysBetween(mondayOf(anchor), mondayOf(d)) / 7);
+      return w >= 0 && w % n === 0;
+    }
+    case "everyNDays": {
+      const k = daysBetween(anchor, d);
+      return k >= 0 && k % n === 0;
+    }
+    case "monthly": {
+      const giorno = Math.min(31, Math.max(1, +r.day || 1));
+      const dt = fromIso(d);
+      const ultimo = new Date(dt.getFullYear(), dt.getMonth() + 1, 0).getDate();
+      if (dt.getDate() !== Math.min(giorno, ultimo)) return false;
+      const m = monthsBetween(anchor, d);
+      return m >= 0 && m % n === 0;
+    }
+    case "yearly": return !!r.md && mdMatch(r.md, d);
+    case "dates":  return (r.dates || []).some(md => mdMatch(md, d));
+  }
+  return false;
+}
 
-function nextDateOccurrence(act, from){
-  const t = act.rec.type;
-  if (t === "dates"){
-    const list = (act.rec.dates || []).slice().sort();
-    if (!list.length) return null;
-    const y = +from.slice(0,4);
-    for (const anno of [y, y+1])
-      for (const md of list){
-        const d = `${anno}-${md}`;
-        if (d >= from) return d;
-      }
-    return null;
-  }
-  if (t === "yearly"){
-    if (!act.rec.md) return null;
-    const y = +from.slice(0,4);
-    for (const anno of [y, y+1]){
-      const d = `${anno}-${act.rec.md}`;
-      if (d >= from) return d;
-    }
-    return null;
-  }
-  if (t === "monthly"){
-    const giorno = Math.min(31, Math.max(1, +act.rec.day || 1));
-    let d = fromIso(from);
-    for (let i = 0; i < 40; i++){
-      const ultimo = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-      const cand = iso(new Date(d.getFullYear(), d.getMonth(), Math.min(giorno, ultimo)));
-      if (cand >= from) return cand;
-      d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
-    }
-    return null;
-  }
+// I giri che cadono in un giorno: i naturali non toccati, più quelli spostati lì.
+// Restituisce le date "di origine" dei giri, che sono il loro nome.
+function occOn(a, d){
+  const out = [];
+  const mv = a.moves || {}, sk = a.skips || {};
+  if (nativeOn(a, d) && !mv[d] && !sk[d]) out.push(d);
+  for (const o in mv) if (mv[o] === d && o !== d && !sk[o]) out.push(o);
+  return out;
+}
+const actsOn = d => S.activities.filter(a => occOn(a, d).length);
+const todaysActs = () => isPaused() ? [] : actsOn(today());
+
+// se il giro di quel giorno era stato spostato lì da un altro giorno, da quale
+function movedFrom(a, d){
+  const mv = a.moves || {};
+  for (const o in mv) if (mv[o] === d && o !== d) return o;
   return null;
 }
 
-// First usable day at or after `from`, searching at most `limit` days.
-function nextGoodDay(act, from, limit){
-  if (isDateRec(act)) return nextDateOccurrence(act, from);
-  for (let i = 0; i <= limit; i++){
+// il prossimo giorno in cui l'attività c'è, a partire da `from` (compreso)
+function nextOcc(a, from, limit){
+  const lim = limit || 400;
+  for (let i = 0; i <= lim; i++){
     const d = addDays(from, i);
-    if (dayWorks(d, act)) return d;
+    if (occOn(a, d).length) return d;
   }
   return null;
-}
-
-// Where the next cycle should start, after the activity was done (or written off) on `base`.
-function cycleStart(act, base){
-  const t = act.rec.type, n = Math.max(1, act.rec.n || 1);
-  if (t === "once")      return null;
-  if (t === "everyNDays")return addDays(base, n);
-  if (t === "weekly")    return addDays(base, 7 * n);
-  if (t === "timesWeek") return addDays(base, Math.max(1, Math.round(7 / n)));
-  if (t === "dates")     return addDays(base, 1);        // la prossima data della lista
-  if (t === "yearly")    return addDays(base, 1);        // ci ripensa l'anno prossimo
-  if (t === "monthly")   return addMonths(base, n);
-  return addDays(base, 7);
 }
 
 function isDone(dateStr, id){ return !!(S.log[dateStr] && S.log[dateStr][id]); }
 
+// Sposta un giro: dal giorno in cui doveva cadere a quello che scegli tu.
+function moveOcc(a, orig, to){
+  a.moves = a.moves || {};
+  if (to === orig) delete a.moves[orig]; else a.moves[orig] = to;
+  if (a.handled) delete a.handled[orig];
+}
+function skipOcc(a, orig){
+  a.skips = a.skips || {};
+  a.skips[orig] = true;
+  a.skipCount = (a.skipCount || 0) + 1;
+}
+
+/* ---------- le cose rimaste indietro ----------
+   Per ogni attività si guarda il giro più recente prima di oggi. Se non è
+   stato fatto e nessun altro giro l'ha già superato, è "da ridecidere".
+   I giri superati da uno più nuovo contano come saltati, e basta. */
+function missedOf(a, T){
+  const start = maxD(actFrom(a), addDays(T, -30));
+  for (let d = addDays(T, -1); d >= start; d = addDays(d, -1)){
+    const giri = occOn(a, d);
+    if (!giri.length) continue;
+    if (S.pausedDays[d] || isDone(d, a.id)) return null;
+    const o = giri.find(x => !(a.handled && a.handled[x]));
+    return o ? { orig:o, day:d } : null;
+  }
+  return null;
+}
+
+function missedList(){
+  if (isPaused()) return [];
+  const T = today(), out = [];
+  for (const a of S.activities){
+    const m = missedOf(a, T);
+    if (!m) continue;
+    // se oggi c'è già un giro nuovo, quello vecchio è superato: niente da decidere
+    if (occOn(a, T).length) continue;
+    out.push({ a, orig: m.orig, day: m.day });
+  }
+  return out.sort((x,y) => (x.a.imp - y.a.imp) || x.day.localeCompare(y.day));
+}
+
 /* ---------- QUANDO SEI VIA ----------
-   Con la pausa accesa il coach non programma, non segna saltate e non chiede
-   la chiusura serale. Quei giorni restano fuori dalle medie: non sono giornate
-   andate male, sono giornate che non contano. */
+   Con la pausa accesa il coach non chiede niente, non segna saltate e non
+   chiede la chiusura serale. Quei giorni restano fuori dalle medie. */
 function isPaused(){
   if (!S.pause) return false;
   const T = today();
@@ -713,9 +810,16 @@ function endPause(){
   let fine = p.to && p.to < T ? p.to : addDays(T, -1);
   for (let d = p.from, i = 0; d <= fine && i < 400; d = addDays(d, 1), i++) S.pausedDays[d] = true;
 
-  const acts = S.activities
-    .filter(a => a.scheduledFor && a.scheduledFor < T && !isDone(a.scheduledFor, a.id))
-    .map(a => ({ id:a.id, name:a.name, from:a.scheduledFor, giorni: daysBetween(a.scheduledFor, T) }));
+  // per ogni attività, l'ultimo giro caduto mentre eri via e non fatto
+  const acts = [];
+  for (const a of S.activities){
+    for (let d = fine; d >= p.from; d = addDays(d, -1)){
+      const giri = occOn(a, d);
+      if (!giri.length) continue;
+      if (!isDone(d, a.id)) acts.push({ id:a.id, name:a.name, orig:giri[0], from:d, giorni: daysBetween(d, T) });
+      break;
+    }
+  }
 
   const rems = S.reminders
     .filter(r => r.when && r.when.type === "date" && r.when.date >= p.from && r.when.date < T && !readToday(r.when.date, r.id))
@@ -723,6 +827,10 @@ function endPause(){
 
   const goals = [];
   for (const g of S.goals){
+    if (g.per === "d"){
+      if (g.due && g.due >= p.from && g.due < T && !goalDone(g)) goals.push({ id:g.id, name:g.name, per:"d" });
+      continue;
+    }
     const k = pKey(g.per, p.from);
     if (k !== pKey(g.per, T) && !(g.done && g.done[k])) goals.push({ id:g.id, name:g.name, per:g.per });
   }
@@ -738,27 +846,19 @@ function endPause(){
   runEngine(); save(); render();
 }
 
-// Cosa fare di un'attività rimasta ferma: subito, al prossimo giro, oppure niente.
+// Cosa fare di un'attività rimasta ferma durante la pausa.
 function resumeAct(id, mode){
-  const T = today();
   const a = S.activities.find(x => x.id === id);
-  if (a){
-    if (mode === "subito"){
-      a.scheduledFor = nextGoodDay(a, T, 60);
-    } else if (mode === "ciclo"){
-      const st = cycleStart(a, a.scheduledFor || T);
-      a.scheduledFor = st ? nextGoodDay(a, st > T ? st : T, 60) : null;
-    } else {
-      const st = cycleStart(a, T);
-      a.scheduledFor = st ? nextGoodDay(a, st, 60) : null;
-    }
-    a.moved = null;
-  }
+  const r = S.resume && S.resume.acts.find(x => x.id === id);
+  if (a && r && mode === "recupera"){ openReplan(a.id, r.orig, { dopo: () => dropResumeAct(id) }); return; }
+  dropResumeAct(id);
+}
+function dropResumeAct(id){
   if (S.resume){
     S.resume.acts = S.resume.acts.filter(x => x.id !== id);
     if (!S.resume.acts.length && !S.resume.rems.length && !S.resume.goals.length && !S.resume.fridge.length) S.resume = null;
   }
-  runEngine(); save(); render();
+  save(); render();
 }
 
 function runEngine(){
@@ -773,72 +873,145 @@ function runEngine(){
     return;
   }
   const notices = [];
-  // le attività dentro il riepilogo del rientro aspettano te, non il motore
-  const hold = new Set(S.resume ? S.resume.acts.map(a => a.id) : []);
 
-  for (const act of S.activities){
-    if (hold.has(act.id)) continue;
-    // never scheduled yet → place it
-    if (!act.scheduledFor){
-      act.scheduledFor = nextGoodDay(act, T, 60);
-      act.moved = null;
-      continue;
-    }
-    // already done for the day it was scheduled on → move to next cycle
-    if (isDone(act.scheduledFor, act.id) ){
-      const base = act.scheduledFor;
-      const nextStart = cycleStart(act, base);
-      if (!nextStart){ act.scheduledFor = null; act.moved = null; continue; }
-      if (daysBetween(T, nextStart) <= 0 && base < T){
-        act.scheduledFor = nextGoodDay(act, nextStart > T ? nextStart : T, 60);
-      } else {
-        act.scheduledFor = nextGoodDay(act, nextStart, 60);
-      }
-      act.moved = null;
-      continue;
-    }
-    // still pending, day has passed → try to move it forward
-    if (act.scheduledFor < T){
-      const origin = act.moved ? act.moved.from : act.scheduledFor;
-      const limit  = act.maxDays - daysBetween(origin, T);
-      const target = nextGoodDay(act, T, Math.max(0, limit));
-      if (target){
-        if (target !== act.scheduledFor){
-          act.moved = { from: origin, to: target };
-          notices.push({ kind:"moved", id:act.id,
-            text:`«${act.name}» non l'hai fatta ${GG[dow(act.scheduledFor)].toLowerCase()}. Spostata a ${GG[dow(target)].toLowerCase()} ${prettyDate(target)}.` });
-          act.scheduledFor = target;
+  // i giri superati da uno più nuovo passano fra i saltati, senza chiedere niente
+  for (const a of S.activities){
+    a.handled = a.handled || {};
+    const start = maxD(actFrom(a), addDays(T, -30));
+    let visto = false;                        // ho già incontrato un giro più recente?
+    let superate = 0;
+    for (let d = T; d >= start; d = addDays(d, -1)){
+      const giri = occOn(a, d);
+      if (!giri.length) continue;
+      if (d < T && visto){
+        for (const o of giri){
+          if (isDone(d, a.id) || a.handled[o] || S.pausedDays[d]) continue;
+          a.handled[o] = "superata";
+          a.skipCount = (a.skipCount || 0) + 1;
+          superate++;
         }
-      } else {
-        act.skipCount = (act.skipCount||0) + 1;
-        notices.push({ kind:"skipped", id:act.id,
-          text:`«${act.name}» è saltata: nessun giorno utile entro ${act.maxDays} giorni. Riparte dal prossimo ciclo.` });
-        const nextStart = cycleStart(act, T);
-        act.scheduledFor = nextStart ? nextGoodDay(act, nextStart, 60) : null;
-        act.moved = null;
       }
+      visto = true;
     }
+    if (superate) notices.push({ kind:"skipped", id:a.id,
+      text: superate === 1 ? `«${a.name}»: un giro è passato senza farla, ormai c'è già quello dopo.`
+                           : `«${a.name}»: ${superate} giri sono passati senza farla, ormai c'è già quello dopo.` });
+    // pulizia: le cose vecchie non servono più
+    const vecchio = addDays(T, -90);
+    for (const o in a.handled) if (o < vecchio) delete a.handled[o];
+    for (const o in (a.skips || {})) if (o < vecchio) delete a.skips[o];
+    for (const o in (a.moves || {})) if (o < vecchio && a.moves[o] < vecchio) delete a.moves[o];
   }
 
-  S.notices = notices;
+  // le notizie restano per la giornata: si accumulano, non si cancellano a ogni giro
+  const prima = (S.lastRun === T ? S.notices : []).filter(n => !notices.some(m => m.text === n.text));
+  S.notices = prima.concat(notices);
   S.lastRun = T;
-  S.dayPlan[T] = S.activities.filter(a => a.scheduledFor === T).map(a => a.id);
+  S.dayPlan[T] = todaysActs().map(a => a.id);
   const cutoff = addDays(T, -60);
   for (const k in S.dayPlan) if (k < cutoff) delete S.dayPlan[k];
   save();
 }
 
 /* ============================================================
+   IL CONSIGLIO — quanto è carica una giornata, e perché
+   Serve quando crei qualcosa e quando una cosa resta indietro:
+   il coach non decide, ti dice dove starebbe meglio.
+   ============================================================ */
+function dayLoad(d, skipActId){
+  const a0 = awakeFrom(), a1 = awakeTo();
+  const busy = busyLabeled(d).filter(b => b.e > a0 && b.s < a1);
+  const busyMin = busyOn(d).map(([s,e]) => [Math.max(s,a0), Math.min(e,a1)])
+    .filter(([s,e]) => e > s).reduce((t,[s,e]) => t + e - s, 0);
+  const acts = actsOn(d).filter(a => a.id !== skipActId);
+  const actMin = acts.reduce((t,a) => t + (+a.dur || 30), 0);
+  const evs = eventsOn(d).length + gcalSingles(d).length;
+  const tot = Math.max(60, a1 - a0);
+  const free = Math.max(0, tot - busyMin - actMin);
+  const q = (busyMin + actMin) / tot;
+  return { d, busy, busyMin, acts, actMin, evs, free, q,
+           score: busyMin + actMin * 1.3 + acts.length * 25 + evs * 30,
+           word: q < .3 ? "leggera" : q < .6 ? "normale" : "piena" };
+}
+
+// "lavoro 8:30–12:30 e 15:00–19:00, dentista 17:00"
+function busySummary(L){
+  if (!L.busy.length) return "";
+  const per = {};
+  for (const b of L.busy){
+    const k = b.label || "impegno";
+    (per[k] = per[k] || []).push(`${toHHMM(b.s)}–${toHHMM(b.e)}`);
+  }
+  const parti = Object.entries(per).map(([k,v]) => `${k.toLowerCase()} ${v.join(" e ")}`);
+  return parti.length > 2 ? `${parti.slice(0,2).join(", ")} e altro` : parti.join(", ");
+}
+
+function loadLine(L){
+  const bits = [`giornata ${L.word}`];
+  const bs = busySummary(L);
+  bits.push(bs || "nessun impegno");
+  if (L.acts.length) bits.push(`${L.acts.length} ${L.acts.length === 1 ? "attività" : "attività"}`);
+  bits.push(`${durLabel(Math.round(L.free / 30) * 30 || 0)} liberi`);
+  return bits.join(" · ");
+}
+
+// I giorni migliori per fare una cosa, dal più consigliato.
+// opts: { from, days, dur, win, actId, allowed:[giorni della settimana preferiti] }
+function suggestDays(opts){
+  const out = [];
+  const n = opts.days || 7;
+  for (let i = 0; i < n; i++){
+    const d = addDays(opts.from, i);
+    if (S.pause && d >= S.pause.from && (!S.pause.to || d <= S.pause.to)) continue;
+    const L = dayLoad(d, opts.actId);
+    const room = opts.win ? freeRoom(d, opts.win) : L.free;
+    const fits = room >= (+opts.dur || 0);
+    if (d === today() && !fits) continue;                    // oggi solo se ci sta davvero
+    let score = L.score + i * 30 + (fits ? 0 : 5000);
+    if (opts.allowed && opts.allowed.length && !opts.allowed.includes(dow(d))) score += 300;
+    out.push({ d, L, room, fits, score });
+  }
+  return out.sort((a,b) => a.score - b.score);
+}
+
+function whyDay(x, win){
+  const L = x.L;
+  const parti = [];
+  if (!x.fits && win) parti.push(`nella fascia ${win.start}–${win.end} sei già occupato`);
+  parti.push(loadLine(L));
+  return parti.join(" · ");
+}
+
+const dayChip = d => {
+  const T = today();
+  if (d === T) return "Oggi";
+  if (d === addDays(T, 1)) return "Domani";
+  return `${GG3[dow(d)]} ${prettyDate(d)}`;
+};
+
+// Per le attività a giorni fissi: quali giorni della settimana sono i più liberi
+// nella fascia scelta, guardando le prossime quattro settimane.
+function weekdayAdvice(win, dur, actId){
+  const T = today(), res = [];
+  for (let g = 0; g < 7; g++){
+    let d = T;
+    while (dow(d) !== g) d = addDays(d, 1);
+    let tot = 0, fitsN = 0, primo = null;
+    for (let k = 0; k < 4; k++){
+      const dd = addDays(d, 7 * k);
+      const L = dayLoad(dd, actId);
+      if (!primo) primo = L;
+      tot += L.score;
+      if (freeRoom(dd, win) >= dur) fitsN++;
+    }
+    res.push({ g, score: tot / 4 + (4 - fitsN) * 400, fitsN, L: primo });
+  }
+  return res.sort((a,b) => a.score - b.score);
+}
+
+/* ============================================================
    4. VIEW MODEL
    ============================================================ */
-const todaysActs = () => S.activities.filter(a => a.scheduledFor === today());
-
-function pendingActs(){
-  const T = today();
-  return S.activities
-    .filter(a => a.scheduledFor && a.scheduledFor > T)
-    .sort((a,b) => a.scheduledFor.localeCompare(b.scheduledFor) || a.imp - b.imp);
-}
 
 // Una fascia può scavalcare la mezzanotte (22:00–01:00). In quel caso
 // "dentro la fascia" vuol dire: dopo l'inizio, oppure prima della fine.
@@ -901,17 +1074,21 @@ function remWhenLabel(r){
   return "ogni giorno";
 }
 
+// Cosa c'era (o c'è) da fare in un giorno. Oggi e i giorni futuri si leggono
+// dai giri delle attività; per quelli passati vale quello che era in programma allora.
 function planFor(d){
+  const T = today();
+  if (d >= T) return d === T ? todaysActs() : actsOn(d);
   if (S.dayPlan[d]) return S.dayPlan[d].map(id => S.activities.find(a => a.id === id)).filter(Boolean);
-  if (d === today()) return todaysActs();
-  return [];
+  return actsOn(d);
 }
 
 // `picks` è facoltativo: serve alla chiusura serale per mostrare subito
 // l'effetto di "non c'era nulla da fare", che vale come completata.
 function progressOn(d, picks){
   const vuoto = id => picks && picks[id] === R_VUOTO;
-  const acts = planFor(d);
+  // le attività, più le cose di Google Calendar che hai segnato "da spuntare"
+  const acts = planFor(d).map(a => ({ id:a.id, imp:a.imp })).concat(gcalTodosOn(d).map(x => ({ id:x.id, imp:x.imp })));
   const items = allRoutineItems();
   let tot = 0, got = 0;
   for (const a of acts){ const w = W_ACT[a.imp] || 3; tot += w; if (isDone(d, a.id) || vuoto(a.id)) got += w; }
@@ -928,24 +1105,7 @@ function progressOn(d, picks){
   return { pct: Math.round(got / tot * 100), done: doneCount, total: acts.length + items.length + rem.length + pack.length };
 }
 
-function progress(){
-  const T = today();
-  const acts = todaysActs();
-  const items = allRoutineItems();
-  let tot = 0, got = 0;
-  for (const a of acts){ const w = W_ACT[a.imp] || 3; tot += w; if (isDone(T, a.id)) got += w; }
-  for (const i of items){ tot += W_ROUT; if (rDone(T, i.id)) got += W_ROUT; }
-  const rem = remindersOn(T);
-  for (const r of rem){ tot += W_REM; if (readToday(T, r.id)) got += W_REM; }
-  const pack = tripItemsOn(T);
-  for (const t of pack){ tot += W_TRIP; if (tripDone(t.tripId, t.id)) got += W_TRIP; }
-  if (!tot) return { pct: 0, done: 0, total: 0 };
-  const doneCount = acts.filter(a => isDone(T,a.id)).length
-    + items.filter(i => rDone(T,i.id)).length
-    + rem.filter(r => readToday(T,r.id)).length
-    + pack.filter(t => tripDone(t.tripId, t.id)).length;
-  return { pct: Math.round(got / tot * 100), done: doneCount, total: acts.length + items.length + rem.length + pack.length };
-}
+const progress = () => progressOn(today());
 
 function greeting(){
   const m = nowMin();
@@ -1023,7 +1183,15 @@ function notifiche(){
   const T = today(), out = [];
   if (S.resume) out.push({ k:"rientro", t:"Hai un riepilogo del rientro da sistemare" });
   for (const n of S.notices) out.push({ k:"programma", t:n.text });
+  const mr = missedList().length;
+  if (mr) out.push({ k:"da ridecidere", t:`${mr === 1 ? "Un'attività è rimasta indietro" : `${mr} attività sono rimaste indietro`}: ti propongo io quando rifarle` });
+  if (S.gcalOn && (GCAL.status === "permesso" || GCAL.status === "vecchia"))
+    out.push({ k:"google calendar", t: GCAL.status === "permesso" ? "Per leggere il calendario serve il tuo permesso: Impostazioni → Google Calendar" : "Per leggere il calendario installa l'app Android nuova" });
+  const gn = gcalNew().length;
+  if (gn) out.push({ k:"google calendar", t:`${gn === 1 ? "Una cosa nuova" : `${gn} cose nuove`} sul calendario: puoi aggiungere i dettagli` });
   for (const o of eventsOn(T)) out.push({ k:"oggi", t:`${o.label}${o.allDay ? " · tutto il giorno" : ` · ${o.start}`}${o.place ? ` · ${o.place}` : ""}` });
+  if (S.gcalOn) for (const g of gcalOnDay(T)) if (!g.recurring)
+    out.push({ k:"oggi", t:`${g.label}${g.allDay ? " · tutto il giorno" : ` · ${toHHMM(g.s)}`}${g.inst.place ? ` · ${g.inst.place}` : ""}` });
   for (const o of eventsSoon(T)){
     const dd = daysBetween(T, o.date);
     out.push({ k:"in arrivo", t:`${o.label} ${dd === 1 ? "domani" : `fra ${dd} giorni`}` });
@@ -1046,7 +1214,7 @@ function notifiche(){
   for (const g of S.goals){
     if (goalDone(g)) continue;
     const l = goalLeft(g);
-    if (l <= 2) out.push({ k:"obiettivo", t:`${g.name}: ${l === 0 ? "ultimo giorno utile" : l === 1 ? "manca un giorno" : `mancano ${l} giorni`}` });
+    if (l <= 2 && l >= -30) out.push({ k:"obiettivo", t:`${g.name}: ${goalMeta(g)}` });
   }
   return out;
 }
@@ -1141,6 +1309,10 @@ function renderOggi(){
 
     ${resumeHTML()}
 
+    ${replanHTML(T)}
+
+    ${gcalNewHTML(T)}
+
     ${remindersBlock(T)}
 
     <h2>La giornata</h2>
@@ -1156,10 +1328,12 @@ function renderOggi(){
     <h2 id="h-acts">Da fare oggi${acts.length ? ` · ${acts.filter(a=>isDone(T,a.id)).length}/${acts.length}` : ""}</h2>
     <div class="card">
       ${acts.length ? acts.map(a => rowHTML(a, T)).join("")
-        : `<div class="empty">Niente in programma oggi. Aggiungi un'attività dalla scheda Attività.</div>`}
+        : `<div class="empty">Niente in programma oggi. Le attività si aggiungono dal + o dalla scheda Base.</div>`}
     </div>
 
-    <div style="text-align:center;font-size:11.5px;color:var(--ink-faint);padding:18px 0 4px">versione 25</div>
+    ${gcalTodoHTML(T)}
+
+    <div style="text-align:center;font-size:11.5px;color:var(--ink-faint);padding:18px 0 4px">versione ${VERSIONE_APP}</div>
   </div>`;
 
   bindAll();
@@ -1307,8 +1481,8 @@ function renderBaseSub(){
           <div class="imp i${a.imp}" style="min-height:34px"></div>
           <div class="rbody">
             <div class="rtitle">${esc(a.name)}</div>
-            <div class="rmeta">${a.days.map(d=>GG3[d]).join(" ")}<span class="dot">·</span>${a.win.start}–${a.win.end}<span class="dot">·</span>${durLabel(a.dur)}</div>
-            <div class="rmeta" style="color:var(--ink-faint)">${recLabel(a.rec)}<span class="dot">·</span>entro ${a.maxDays} giorni${a.scheduledFor?`<span class="dot">·</span>prossima ${prettyDate(a.scheduledFor)}`:""}</div>
+            <div class="rmeta">${esc(recLabel(a.rec, a.days))}<span class="dot">·</span>${a.win.start}–${a.win.end}<span class="dot">·</span>${durLabel(a.dur)}</div>
+            <div class="rmeta" style="color:var(--ink-faint)">${(() => { const nx = nextOcc(a, T, 400); return nx ? `prossima: ${esc(dayChip(nx).toLowerCase())}` : "nessun giro in vista"; })()}</div>
           </div>
         </button>
         ${adviceHTML(a)}`).join("")
@@ -1342,7 +1516,7 @@ function renderBaseSub(){
   }
 
   else if (v === "impegni"){
-    nome = "Impegni fissi"; sotto = "Quello che torna ogni settimana tutto l'anno, tipo il lavoro. Non si sposta: le attività si spostano attorno.";
+    nome = "Impegni fissi"; sotto = "Quello che torna ogni settimana, tipo il lavoro. Sopra quelli scritti qui, sotto quelli che arrivano da Google Calendar.";
     corpo = `
     <div class="card">
       ${S.fixed.length ? S.fixed.map(f => `
@@ -1357,12 +1531,14 @@ function renderBaseSub(){
       <div class="row"><button class="btn ghost wide" id="addf">Aggiungi impegno</button></div>
     </div>
 
+    ${gcalFixedHTML()}
+
     <h2>Spazio libero questa settimana</h2>
     <div class="card">${weekFreeHTML()}</div>`;
   }
 
   else if (v === "eventi"){
-    nome = "Eventi"; sotto = "Le cose che capitano una volta: riunioni, compleanni, cene, appuntamenti.";
+    nome = "Eventi"; sotto = "Le cose che capitano una volta: riunioni, compleanni, cene, appuntamenti. Quelli di Google Calendar sono in fondo.";
     corpo = `
     ${eventsHTML(T)}
     <h2>Tutti</h2>
@@ -1373,12 +1549,14 @@ function renderBaseSub(){
           <div class="rbody">
             <div class="rtitle">${esc(o.label)}</div>
             <div class="rmeta">${GG[dow(o.date)]} ${prettyDate(o.date)}<span class="dot">·</span>${evWhen(o, o.date)}</div>
-            ${o.place || o.warn ? `<div class="rmeta" style="color:var(--ink-faint)">${o.place ? esc(o.place) : ""}${o.place && o.warn ? `<span class="dot">·</span>` : ""}${o.warn ? `avviso ${o.warn === 1 ? "il giorno prima" : `${o.warn} giorni prima`}` : ""}</div>` : ""}
+            <div class="rmeta" style="color:var(--ink-faint)">${o.place ? `${esc(o.place)}<span class="dot">·</span>` : ""}avviso: ${esc(avvisoLabel(avvisoOf(o, "avviso", "evento"), !o.allDay))}</div>
           </div>
         </button>`).join("")
       : `<div class="empty">Niente in programma.</div>`}
       <div class="row"><button class="btn ghost wide" id="addone">Aggiungi evento</button></div>
-    </div>`;
+    </div>
+
+    ${gcalEventsHTML(T)}`;
   }
 
   else if (v === "spesa"){
@@ -1425,7 +1603,7 @@ function renderBaseSub(){
             <div class="rtitle" style="${dd < 0 ? "color:var(--ink-faint)" : ""}">${esc(t.name)}</div>
             <div class="rmeta">${GG[dow(t.date)]} ${prettyDate(t.date)}<span class="dot">·</span>${
               dd < 0 ? "già fatto" : dd === 0 ? "oggi" : dd === 1 ? "domani" : `fra ${dd} giorni`}<span class="dot">·</span>${fatte}/${t.items.length} in valigia</div>
-            <div class="rmeta" style="color:var(--ink-faint)">la lista esce ${(t.lead||1) === 1 ? "il giorno prima" : `${t.lead} giorni prima`}</div>
+            <div class="rmeta" style="color:var(--ink-faint)">la lista esce ${(t.lead||1) === 1 ? "il giorno prima" : `${t.lead} giorni prima`}${(t.docs || []).length ? `<span class="dot">·</span>${t.docs.length} ${t.docs.length === 1 ? "documento" : "documenti"}` : ""}</div>
           </div>
         </button>`; }).join("")
       : `<div class="empty">Nessun viaggio.</div>`}
@@ -1434,7 +1612,7 @@ function renderBaseSub(){
   }
 
   else if (v === "obiettivi"){
-    nome = "Obiettivi"; sotto = "Cose da fare una volta entro la settimana, il mese o l'anno. Senza un giorno fisso.";
+    nome = "Obiettivi"; sotto = "Cose da fare una volta entro la settimana, il mese, l'anno o una data precisa. Senza un giorno fisso: basta farle entro la scadenza.";
     corpo = goalsHTML();
   }
 
@@ -1676,7 +1854,7 @@ function doRow(a, T){
       <div class="rtitle">${esc(a.name)}</div>
       <div class="rmeta">${a.win.start}–${a.win.end}<span class="dot">·</span>${durLabel(a.dur)}<span class="dot">·</span>${esc(a.cat)}</div>
       ${timeOn(T, a.id) ? `<span class="flag">${durLabel(timeOn(T, a.id))} registrati oggi</span>` : ""}
-      ${a.moved ? `<span class="flag moved">rimandata da ${GG3[dow(a.moved.from)]} ${prettyDate(a.moved.from)}</span>` : ""}
+      ${movedFrom(a, T) ? `<span class="flag moved">spostata da ${GG3[dow(movedFrom(a, T))]} ${prettyDate(movedFrom(a, T))}</span>` : ""}
     </div>
     ${fatta ? "" : `<button class="btn ghost" data-do-act="${a.id}" style="min-width:44px;padding:8px 0" aria-label="Fai adesso">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>`}
@@ -1686,8 +1864,10 @@ function doRow(a, T){
 function openDo(){
   const T = today();
   const oggi = todaysActs().filter(a => !isDone(T, a.id));
-  const dopo = S.activities.filter(a => a.scheduledFor && a.scheduledFor > T)
-                 .sort((x,y) => x.scheduledFor.localeCompare(y.scheduledFor)).slice(0, 12);
+  const dopo = S.activities
+    .map(a => ({ a, d: nextOcc(a, addDays(T, 1), 13) }))
+    .filter(x => x.d)
+    .sort((x,y) => x.d.localeCompare(y.d)).slice(0, 12);
   const w = document.createElement("div");
   w.className = "sheet";
   w.innerHTML = `
@@ -1706,11 +1886,11 @@ function openDo(){
     </div>
     ${dopo.length ? `<h2>Nei prossimi giorni</h2>
     <div class="card">
-      ${dopo.map(a => `
-        <button class="actrow" data-pick="${a.id}">
+      ${dopo.map(({a, d}) => `
+        <button class="actrow" data-pick="${a.id}" data-day="${d}">
           <div class="imp i${a.imp}" style="min-height:32px"></div>
           <div class="rbody"><div class="rtitle">${esc(a.name)}</div>
-            <div class="rmeta">${GG3[dow(a.scheduledFor)]} ${prettyDate(a.scheduledFor)}<span class="dot">·</span>${durLabel(a.dur)}</div></div>
+            <div class="rmeta">${GG3[dow(d)]} ${prettyDate(d)}<span class="dot">·</span>${durLabel(a.dur)}</div></div>
         </button>`).join("")}
     </div>` : ""}
     <div class="btnrow"><button class="btn ghost wide" id="do-cancel">Chiudi</button></div>
@@ -1718,19 +1898,21 @@ function openDo(){
   </div>`;
   document.body.appendChild(w);
   w.querySelector("#do-cancel").onclick = () => w.remove();
-  w.querySelectorAll("[data-pick]").forEach(b => b.onclick = () => { w.remove(); openDoAct(b.dataset.pick); });
+  w.querySelectorAll("[data-pick]").forEach(b => b.onclick = () => { w.remove(); openDoAct(b.dataset.pick, b.dataset.day); });
 }
 
-function openDoAct(id){
+function openDoAct(id, day){
   const a = S.activities.find(x => x.id === id); if (!a) return;
   const T = today();
+  const giorno = day || (occOn(a, T).length ? T : nextOcc(a, T, 60));
+  const anticipo = giorno && giorno > T;          // la fai oggi al posto di un giorno che deve ancora venire
   const w = document.createElement("div");
   w.className = "sheet";
   w.innerHTML = `
   <div class="sheetin">
     <h3>${esc(a.name)}</h3>
     <div class="card" style="margin-bottom:18px">
-      <div class="stat"><span>Quando</span><span>${a.scheduledFor === T ? "oggi" : a.scheduledFor ? `${GG3[dow(a.scheduledFor)]} ${prettyDate(a.scheduledFor)}` : "—"}, ${a.win.start}–${a.win.end}</span></div>
+      <div class="stat"><span>Quando</span><span>${giorno === T ? "oggi" : giorno ? `${GG3[dow(giorno)]} ${prettyDate(giorno)}` : "—"}, ${a.win.start}–${a.win.end}</span></div>
       <div class="stat"><span>Quanto dura</span><span>${durLabel(a.dur)}</span></div>
       ${timeOn(T, a.id) ? `<div class="stat"><span>Già registrati oggi</span><span>${durLabel(timeOn(T, a.id))}</span></div>` : ""}
     </div>
@@ -1746,7 +1928,7 @@ function openDoAct(id){
     </div>
 
     <div class="btnrow">
-      <button class="btn primary" id="da-done" style="flex:2">${isDone(T, a.id) ? "Toglila da fatte" : "Segnala fatta"}</button>
+      <button class="btn primary" id="da-done" style="flex:2">${isDone(T, a.id) ? "Toglila da fatte" : anticipo ? "Fatta oggi, in anticipo" : "Segnala fatta"}</button>
       <button class="btn ghost" id="da-no">Senza crono</button>
     </div>
     <div class="btnrow"><button class="btn ghost wide" id="da-edit">Modifica l'attività</button></div>
@@ -1754,10 +1936,15 @@ function openDoAct(id){
   </div>`;
   document.body.appendChild(w);
   w.querySelectorAll("[data-runc]").forEach(b => b.onclick = () => {
+    if (anticipo){ moveOcc(a, occOn(a, giorno)[0] || giorno, T); save(); }
     w.remove(); startRun(b.dataset.runc, { id:a.id, name:a.name });
   });
   w.querySelector("#da-no").onclick = () => w.remove();
-  w.querySelector("#da-done").onclick = () => { w.remove(); toggleDone(a.id); render(); };
+  w.querySelector("#da-done").onclick = () => {
+    // portarsi avanti: il giro di quel giorno viene spostato a oggi e segnato fatto
+    if (anticipo && !isDone(T, a.id)) moveOcc(a, occOn(a, giorno)[0] || giorno, T);
+    w.remove(); toggleDone(a.id); render();
+  };
   w.querySelector("#da-edit").onclick = () => { w.remove(); openForm(a.id); };
 }
 
@@ -1809,6 +1996,8 @@ function bindAll(){
   el.querySelectorAll("[data-remprev]").forEach(b => b.onclick = () => openReminder(b.dataset.remprev, true));
   el.querySelectorAll("[data-remedit]").forEach(b => b.onclick = () => openReminderEdit(b.dataset.remedit));
   el.querySelectorAll("[data-ev]").forEach(b => b.onclick = () => openOneoff(b.dataset.ev));
+  el.querySelectorAll("[data-gc]").forEach(b => b.onclick = () => openGcalItem(b.dataset.gc, b.dataset.gcd));
+  if (el.querySelector("[data-doc]")) bindDocs(el);
   el.querySelectorAll("[data-fr]").forEach(b => b.onclick = () => openFridgeItem(b.dataset.fr));
   el.querySelectorAll("[data-led]").forEach(b => b.onclick = () => openLedgerItem(b.dataset.led));
   el.querySelectorAll("[data-gtick]").forEach(b => b.onclick = () => toggleGoal(b.dataset.gtick));
@@ -1873,6 +2062,10 @@ function bindAll(){
   one("reopen", () => { delete S.closes[closeTarget() || today()]; save(); render(); });
   one("unpause", () => endPause());
   one("resdone", () => { S.resume = null; runEngine(); save(); render(); });
+  one("gcseen", () => { for (const x of gcalNew()) S.gcalSeen[x.key] = true; save(); render(); });
+  el.querySelectorAll("[data-rpmove]").forEach(b => b.onclick = () => doMoveOcc(b.dataset.rpmove, b.dataset.o, b.dataset.d));
+  el.querySelectorAll("[data-rpskip]").forEach(b => b.onclick = () => doSkipOcc(b.dataset.rpskip, b.dataset.o));
+  el.querySelectorAll("[data-rpopen]").forEach(b => b.onclick = () => openReplan(b.dataset.rpopen, b.dataset.o));
   one("addrem", () => openReminderEdit(null));
   one("addgoal", () => openGoal(null));
   one("addtr", () => openTracker(null));
@@ -1918,9 +2111,10 @@ function bindAll(){
 }
 
 /* ============================================================
-   OBIETTIVI A SCADENZA — una volta entro la settimana, il mese, l'anno
+   OBIETTIVI A SCADENZA — una volta entro la settimana, il mese, l'anno,
+   oppure entro una data precisa
    ============================================================ */
-const GPER = { w:"questa settimana", m:"questo mese", y:"quest'anno" };
+const GPER = { w:"questa settimana", m:"questo mese", y:"quest'anno", d:"" };
 
 function periodEnd(per, d){
   const dt = fromIso(d);
@@ -1928,72 +2122,96 @@ function periodEnd(per, d){
   if (per === "m"){ dt.setMonth(dt.getMonth()+1, 0); return iso(dt); }
   dt.setMonth(11, 31); return iso(dt);
 }
-const goalDone = g => !!(g.done && g.done[pKey(g.per, today())]);
-const goalLeft = g => daysBetween(today(), periodEnd(g.per, today()));
+// con una data precisa l'obiettivo si fa una volta sola; gli altri ripartono a ogni periodo
+const goalKey  = g => g.per === "d" ? "d" : pKey(g.per, today());
+const goalDone = g => !!(g.done && g.done[goalKey(g)]);
+const goalDue  = g => g.per === "d" ? (g.due || null) : periodEnd(g.per, today());
+const goalLeft = g => { const f = goalDue(g); return f ? daysBetween(today(), f) : 999; };
+
+function goalMeta(g){
+  const done = goalDone(g), left = goalLeft(g);
+  if (g.per === "d"){
+    if (done) return `fatto${typeof g.done.d === "string" ? ` il ${prettyDate(g.done.d)}` : ""} · era entro il ${prettyDate(g.due)}`;
+    if (left < 0) return `scaduto da ${-left} ${-left === 1 ? "giorno" : "giorni"} · era entro il ${prettyDate(g.due)}`;
+    return `${left === 0 ? "ultimo giorno utile" : left === 1 ? "manca 1 giorno" : `mancano ${left} giorni`} · entro ${GG3[dow(g.due)].toLowerCase()} ${prettyDate(g.due)}`;
+  }
+  if (done) return `fatto ${GPER[g.per]}`;
+  return `${left === 0 ? "ultimo giorno utile" : left === 1 ? "manca 1 giorno" : `mancano ${left} giorni`} · ${GPER[g.per]}`;
+}
 
 function goalsHTML(){
   if (!S.goals.length) return `<div class="card">
-    <div class="empty">Cose da fare una volta entro la settimana, il mese o l'anno. Il coach ti dice quanto manca.</div>
+    <div class="empty">Cose da fare una volta entro la settimana, il mese, l'anno o una data che scegli tu. Il coach ti dice quanto manca e ti avvisa.</div>
     <div class="row"><button class="btn ghost wide" id="addgoal">Aggiungi obiettivo</button></div></div>`;
-  const sorted = [...S.goals].sort((a,b) => (goalDone(a)?1:0) - (goalDone(b)?1:0) || goalLeft(a) - goalLeft(b));
+  const T = today();
+  // quelli con data, fatti da più di due settimane, vanno in archivio
+  const vivi = S.goals.filter(g => !(g.per === "d" && goalDone(g) && g.due && daysBetween(g.due, T) > 14));
+  const archivio = S.goals.filter(g => !vivi.includes(g));
+  const sorted = [...vivi].sort((a,b) => (goalDone(a)?1:0) - (goalDone(b)?1:0) || goalLeft(a) - goalLeft(b));
+  const riga = g => {
+    const done = goalDone(g), left = goalLeft(g);
+    const urgente = !done && left <= 3;
+    return `<div class="row ${done ? "done" : ""}" data-row="${g.id}">
+      <button class="tick" data-gtick="${g.id}" aria-label="Segna come fatto">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+      </button>
+      <div class="rbody">
+        <div class="rtitle">${esc(g.name)}</div>
+        <div class="rmeta" style="${urgente ? "color:var(--warn)" : ""}">${esc(goalMeta(g))}</div>
+        ${timeOn(T, g.id) ? `<span class="flag">${durLabel(timeOn(T, g.id))} registrati oggi</span>` : ""}
+      </div>
+      <button class="btn ghost" data-gedit="${g.id}" style="min-width:40px;padding:8px 0" aria-label="Modifica">&#9881;</button>
+    </div>`;
+  };
   return `<div class="card">
-    ${sorted.map(g => {
-      const done = goalDone(g), left = goalLeft(g);
-      const urgente = !done && left <= 3;
-      return `<div class="row ${done ? "done" : ""}" data-row="${g.id}">
-        <button class="tick" data-gtick="${g.id}" aria-label="Segna come fatto">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-        </button>
-        <div class="rbody">
-          <div class="rtitle">${esc(g.name)}</div>
-          <div class="rmeta" style="${urgente ? "color:var(--warn)" : ""}">
-            ${done ? `fatto ${GPER[g.per]}`
-                   : left === 0 ? "ultimo giorno utile"
-                   : left === 1 ? "manca 1 giorno"
-                   : `mancano ${left} giorni`}${done ? "" : ` · ${GPER[g.per]}`}
-          </div>
-          ${timeOn(today(), g.id) ? `<span class="flag">${durLabel(timeOn(today(), g.id))} registrati oggi</span>` : ""}
-        </div>
-        <button class="btn ghost" data-gedit="${g.id}" style="min-width:40px;padding:8px 0" aria-label="Modifica">&#9881;</button>
-      </div>`;
-    }).join("")}
+    ${sorted.map(riga).join("")}
     <div class="row"><button class="btn ghost wide" id="addgoal">Aggiungi obiettivo</button></div>
-  </div>`;
+  </div>
+  ${archivio.length ? `<details class="card" style="margin-top:16px">
+    <summary style="padding:13px 14px;font-size:13.5px;color:var(--ink-soft);cursor:pointer">Fatti · ${archivio.length}</summary>
+    ${archivio.map(riga).join("")}
+  </details>` : ""}`;
 }
 
 function toggleGoal(id){
   const g = S.goals.find(x => x.id === id); if (!g) return;
-  const k = pKey(g.per, today());
+  const k = goalKey(g);
   g.done = g.done || {};
-  if (g.done[k]) delete g.done[k]; else g.done[k] = true;
+  if (g.done[k]) delete g.done[k]; else g.done[k] = g.per === "d" ? today() : true;
   save();
   markRow(id, g.done[k]);
   const row = document.querySelector(`[data-row="${id}"] .rmeta`);
   if (row){
-    const left = goalLeft(g);
-    row.textContent = g.done[k] ? `fatto ${GPER[g.per]}`
-      : (left === 0 ? "ultimo giorno utile" : left === 1 ? "manca 1 giorno" : `mancano ${left} giorni`) + ` · ${GPER[g.per]}`;
-    row.style.color = (!g.done[k] && left <= 3) ? "var(--warn)" : "";
+    row.textContent = goalMeta(g);
+    row.style.color = (!g.done[k] && goalLeft(g) <= 3) ? "var(--warn)" : "";
   }
   patchToday();
 }
 
 function openGoal(id){
-  const g = id ? S.goals.find(x => x.id === id) : { id:"g"+Date.now(), name: preNome(), per:"w", done:{} };
+  const T = today();
+  const g = id ? S.goals.find(x => x.id === id) : { id:"g"+Date.now(), name: preNome(), per:"w", due: addDays(T, 14), done:{} };
+  let per = g.per || "w";
+  const picker = avvisoPicker("g-av", avvisoOf(g, "avviso", "obiettivo"));
   const w = document.createElement("div");
   w.className = "sheet";
   w.innerHTML = `
   <div class="sheetin">
     <h3>${id ? "Modifica obiettivo" : "Nuovo obiettivo"}</h3>
     <div class="field"><label>Cosa</label>
-      <input type="text" id="g-n" value="${esc(g.name)}" placeholder="Chiamare il commercialista, fare la spesa grossa…"></div>
+      <input type="text" id="g-n" value="${esc(g.name)}" placeholder="Chiamare il commercialista, rinnovare il passaporto…"></div>
     <div class="field"><label>Entro quando</label>
-      <select id="g-p">
-        <option value="w" ${g.per=="w"?"selected":""}>Entro la settimana</option>
-        <option value="m" ${g.per=="m"?"selected":""}>Entro il mese</option>
-        <option value="y" ${g.per=="y"?"selected":""}>Entro l'anno</option>
-      </select>
-      <div class="hint">Non ha un giorno fisso: lo fai quando vuoi, ma il coach ti ricorda quanto manca alla scadenza. Poi riparte da capo.</div></div>
+      <div class="chips" id="g-p">
+        <button class="chip" data-p="w">Entro la settimana</button>
+        <button class="chip" data-p="m">Entro il mese</button>
+        <button class="chip" data-p="y">Entro l'anno</button>
+        <button class="chip" data-p="d">Entro una data</button>
+      </div>
+      <div id="g-duebox" style="margin-top:9px">
+        <input type="date" id="g-due" value="${g.due || addDays(T, 14)}" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)">
+      </div>
+      <div class="hint" id="g-hint"></div></div>
+    <div class="field"><label>Avvisami</label>${picker.html}</div>
     <div class="btnrow">
       <button class="btn primary" id="g-save" style="flex:2">Salva</button>
       <button class="btn ghost" id="g-cancel">Annulla</button>
@@ -2002,6 +2220,16 @@ function openGoal(id){
     <div style="height:30px"></div>
   </div>`;
   document.body.appendChild(w);
+  picker.bind(w);
+  const paint = () => {
+    w.querySelectorAll("#g-p .chip").forEach(b => b.classList.toggle("on", b.dataset.p === per));
+    w.querySelector("#g-duebox").style.display = per === "d" ? "" : "none";
+    w.querySelector("#g-hint").textContent = per === "d"
+      ? "Si fa una volta sola. Il coach ti dice quanto manca e ti avvisa come scegli qui sotto."
+      : "Non ha un giorno fisso: lo fai quando vuoi entro la scadenza. Poi riparte da capo.";
+  };
+  w.querySelectorAll("#g-p .chip").forEach(b => b.onclick = () => { per = b.dataset.p; paint(); });
+  paint();
   w.querySelector("#g-cancel").onclick = () => w.remove();
   if (id) armDelete(w.querySelector("#g-del"), "Elimina obiettivo", () => {
     S.goals = S.goals.filter(x => x.id !== id); save(); w.remove(); render();
@@ -2009,7 +2237,9 @@ function openGoal(id){
   w.querySelector("#g-save").onclick = () => {
     const name = w.querySelector("#g-n").value.trim();
     if (!name){ w.querySelector("#g-n").style.borderColor = "var(--warn)"; return; }
-    const next = { ...g, name, per: w.querySelector("#g-p").value };
+    const due = w.querySelector("#g-due").value;
+    if (per === "d" && !due){ alert("Scegli la data."); return; }
+    const next = { ...g, name, per, due: per === "d" ? due : (g.due || ""), avviso: picker.value() };
     const i = S.goals.findIndex(x => x.id === g.id);
     if (i >= 0) S.goals[i] = next; else S.goals.push(next);
     save(); w.remove(); render();
@@ -2031,9 +2261,12 @@ function monthHTML(){
     }
     for (const f of S.fixed) if (f.showInMonth && f.days.includes(dow(d)))
       evs.push({ t:`${f.start}–${f.end}`, n:f.label });
-    if (S.gcalOn) for (const g of (GCAL.byDay[d] || []))
-      evs.push({ t:`${toHHMM(g.s)}–${toHHMM(g.e)}`, n:g.label });
-    for (const a of S.activities) if (a.scheduledFor === d)
+    // da Google: gli eventi sempre, gli impegni ripetuti solo se l'hai chiesto
+    if (S.gcalOn) for (const g of gcalOnDay(d)){
+      if (g.recurring && !gcxOf(g.key).showInMonth) continue;
+      evs.push({ t: g.allDay ? "tutto il dì" : `${toHHMM(g.s)}–${toHHMM(g.e)}`, n:g.label });
+    }
+    for (const a of actsOn(d))
       evs.push({ t:`${a.win.start}–${a.win.end}`, n:a.name });
     for (let k = evs.length - 1; k >= 0; k--) if (S.hidden.includes(evs[k].n)) evs.splice(k,1);
     if (evs.length){
@@ -2043,7 +2276,7 @@ function monthHTML(){
   }
   const restore = S.hidden.length
     ? `<div class="row"><button class="btn ghost wide" id="unhideall">Rimetti i ${S.hidden.length} nascosti</button></div>` : "";
-  if (!days.length) return `<div class="card"><div class="empty">Nessun impegno nei prossimi 30 giorni. Quelli di Google Calendar compaiono qui appena arrivano.</div>${restore}</div>`;
+  if (!days.length) return `<div class="card"><div class="empty">Nessun impegno nei prossimi 30 giorni.</div>${restore}</div>`;
   return `<div class="card" style="max-height:314px;overflow-y:auto">${restore}
     ${days.map(x => `
       <div class="monthday">
@@ -2059,7 +2292,7 @@ function pauseHTML(T){
     const g = pauseDays();
     return `<div class="closecard" style="border-color:var(--warn)"><div class="rbody">
       <div class="rtitle">Sei via${S.pause.label ? ` · ${esc(S.pause.label)}` : ""}</div>
-      <div class="rmeta">Fermo da ${g === 1 ? "oggi" : `${g} giorni`}${S.pause.to ? `, fino al ${prettyDate(S.pause.to)}` : ""}. Niente programmazione, niente saltate, niente chiusura serale.</div></div>
+      <div class="rmeta">Fermo da ${g === 1 ? "oggi" : `${g} giorni`}${S.pause.to ? `, fino al ${prettyDate(S.pause.to)}` : ""}. Niente attività, niente saltate, niente chiusura serale.</div></div>
       <button class="btn primary" id="unpause">Riprendi</button></div>`;
   }
   if (S.resume) return "";
@@ -2083,7 +2316,7 @@ function resumeHTML(){
   <div class="card">
     <div class="row"><div class="rbody">
       <div class="rtitle">${quanti === 1 ? "Un giorno" : `${quanti} giorni`} di pausa${r.label ? ` · ${esc(r.label)}` : ""}</div>
-      <div class="rmeta">Dal ${prettyDate(r.from)} al ${prettyDate(r.to)}. Ecco cosa è rimasto indietro: decidi tu, poi il coach riparte.</div>
+      <div class="rmeta">Dal ${prettyDate(r.from)} al ${prettyDate(r.to)}. Ecco cosa è rimasto indietro: decidi tu cosa recuperare.</div>
     </div></div>
     ${r.acts.map(a => `
       <div class="row" style="flex-direction:column;align-items:stretch;gap:8px">
@@ -2092,8 +2325,7 @@ function resumeHTML(){
           <div class="rmeta">era in programma ${prettyDate(a.from)}<span class="dot">·</span>${a.giorni} ${a.giorni === 1 ? "giorno" : "giorni"} fa</div>
         </div>
         <div class="why">
-          <button data-rsa="${a.id}" data-do="subito">Rimettila subito</button>
-          <button data-rsa="${a.id}" data-do="ciclo">Aspetta il giro normale</button>
+          <button data-rsa="${a.id}" data-do="recupera">Recuperala: scegli il giorno</button>
           <button data-rsa="${a.id}" data-do="salta">Lascia perdere</button>
         </div>
       </div>`).join("")}
@@ -2111,6 +2343,138 @@ function resumeHTML(){
     </div></div>` : ""}
     <div class="row"><button class="btn ghost wide" id="resdone">Ho finito, chiudi il riepilogo</button></div>
   </div>`;
+}
+
+/* ---------- DA RIDECIDERE ----------
+   Le attività rimaste indietro. Il coach guarda i prossimi giorni, ti dice
+   dove starebbero meglio e perché. Finché non scegli, resta tutto com'è. */
+function replanTip(a){
+  const T = today();
+  const prossimo = nextOcc(a, T, 60);
+  const gg = prossimo ? daysBetween(T, prossimo) : null;
+  // si cerca prima del prossimo giro: dopo non avrebbe senso recuperare
+  const quanti = gg === null ? 7 : Math.max(1, Math.min(7, gg));
+  const sugg = suggestDays({ from:T, days:quanti, dur:a.dur, win:a.win, actId:a.id, allowed:a.days });
+  return { prossimo, gg, sugg, best: sugg.find(x => x.fits) || null };
+}
+
+function replanRow(m){
+  const { a, orig, day } = m;
+  const tip = replanTip(a);
+  const saltaMeglio = tip.gg !== null && tip.gg <= 2;
+  let consiglio, primo;
+  if (saltaMeglio || !tip.best){
+    consiglio = saltaMeglio
+      ? `Il prossimo giro è già ${tip.gg === 1 ? "domani" : "dopodomani"}: ti consiglio di saltare questo.`
+      : `Prima del prossimo giro non trovo spazio nella fascia ${a.win.start}–${a.win.end}. Puoi scegliere un giorno a mano o saltarla.`;
+    primo = `<button class="on" data-rpskip="${a.id}" data-o="${orig}">Salta questo giro</button>`;
+  } else {
+    consiglio = `Ti consiglio <b>${esc(dayChip(tip.best.d).toLowerCase())}</b>: ${esc(whyDay(tip.best))}.`;
+    primo = `<button class="on" data-rpmove="${a.id}" data-o="${orig}" data-d="${tip.best.d}">Spostala a ${esc(dayChip(tip.best.d).toLowerCase())}</button>`;
+  }
+  return `
+  <div class="row" style="flex-direction:column;align-items:stretch;gap:8px">
+    <div class="rbody">
+      <div class="rtitle">${esc(a.name)}</div>
+      <div class="rmeta">non fatta ${GG[dow(day)].toLowerCase()} ${prettyDate(day)}${day !== orig ? ` (l'avevi spostata dal ${prettyDate(orig)})` : ""}${tip.prossimo ? `<span class="dot">·</span>prossimo giro ${esc(dayChip(tip.prossimo).toLowerCase())}` : ""}</div>
+      <div class="rmeta" style="color:var(--ink);margin-top:6px">${consiglio}</div>
+    </div>
+    <div class="why" style="margin-top:0">
+      ${primo}
+      <button data-rpopen="${a.id}" data-o="${orig}">Altre date</button>
+      ${saltaMeglio || !tip.best ? "" : `<button data-rpskip="${a.id}" data-o="${orig}">Salta</button>`}
+    </div>
+  </div>`;
+}
+
+function replanHTML(T){
+  const lista = missedList();
+  if (!lista.length) return "";
+  return `<h2 id="h-replan">Da ridecidere · ${lista.length}</h2>
+  <div class="card">${lista.map(replanRow).join("")}</div>`;
+}
+
+function doMoveOcc(id, orig, d){
+  const a = S.activities.find(x => x.id === id); if (!a) return;
+  moveOcc(a, orig, d);
+  runEngine(); save(); render();
+}
+function doSkipOcc(id, orig){
+  const a = S.activities.find(x => x.id === id); if (!a) return;
+  skipOcc(a, orig);
+  runEngine(); save(); render();
+}
+
+// Il foglio con tutte le possibilità: i giorni consigliati, un giorno a scelta,
+// "l'avevo fatta", "salta".
+function openReplan(id, orig, opts){
+  const a = S.activities.find(x => x.id === id); if (!a) return;
+  opts = opts || {};
+  const T = today();
+  const giorno = (a.moves && a.moves[orig]) || orig;
+  const tip = replanTip(a);
+  const tutti = suggestDays({ from:T, days:14, dur:a.dur, win:a.win, actId:a.id, allowed:a.days });
+  // prima i giorni che vengono prima del prossimo giro; quelli dopo solo se non c'è altro
+  const prima = tutti.filter(x => x.fits && (!tip.prossimo || x.d < tip.prossimo));
+  const top = (prima.length ? prima : tutti.filter(x => x.fits && x.d !== tip.prossimo)).slice(0, 4);
+  const w = document.createElement("div");
+  w.className = "sheet";
+  w.innerHTML = `
+  <div class="sheetin">
+    <h3>${esc(a.name)}</h3>
+    <div class="hint" style="margin-bottom:16px">Doveva essere ${GG[dow(giorno)].toLowerCase()} ${prettyDate(giorno)}, nella fascia ${a.win.start}–${a.win.end}, ${durLabel(a.dur)}.${tip.prossimo ? ` Il prossimo giro normale è ${dayChip(tip.prossimo).toLowerCase()}.` : ""}</div>
+
+    <h2 style="margin-top:0">I giorni che ti consiglio</h2>
+    <div class="card">
+      ${top.length ? top.map((x,i) => `
+        <button class="actrow" data-go="${x.d}">
+          <div class="imp" style="min-height:34px;background:${i === 0 ? "var(--accent)" : "var(--line)"}"></div>
+          <div class="rbody">
+            <div class="rtitle">${esc(dayChip(x.d))}${tip.prossimo && x.d >= tip.prossimo ? ` <span style="font-weight:400;color:var(--ink-faint)">· dopo il prossimo giro</span>` : ""}</div>
+            <div class="rmeta">${esc(whyDay(x))}</div>
+          </div>
+        </button>`).join("")
+      : `<div class="empty">Nelle prossime due settimane la fascia ${a.win.start}–${a.win.end} è sempre occupata. Scegli un giorno qui sotto: puoi comunque farla quando vuoi.</div>`}
+    </div>
+
+    <div class="field" style="margin-top:16px"><label>Un altro giorno</label>
+      <div class="segline">
+        <input type="date" id="rp-d" min="${T}" value="${addDays(T, 1)}" style="flex:1;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)">
+        <button class="btn" id="rp-go" style="flex:0 0 auto">Sposta lì</button>
+      </div>
+      <div class="hint" id="rp-load"></div></div>
+
+    <div class="btnrow"><button class="btn wide" id="rp-done">L'avevo fatta, non l'avevo segnata</button></div>
+    <div class="btnrow"><button class="btn ghost wide" id="rp-skip">Salta questo giro</button></div>
+    <div class="btnrow"><button class="btn ghost wide" id="rp-close">Decido dopo</button></div>
+    <div style="height:30px"></div>
+  </div>`;
+  document.body.appendChild(w);
+  const fine = () => { w.remove(); if (opts.dopo) opts.dopo(); else { runEngine(); save(); render(); } };
+  const inp = w.querySelector("#rp-d"), load = w.querySelector("#rp-load");
+  const anteprima = () => {
+    const d = inp.value;
+    if (!d){ load.textContent = ""; return; }
+    const L = dayLoad(d, a.id);
+    const room = freeRoom(d, a.win);
+    load.textContent = `${loadLine(L)}${room >= a.dur ? "" : ` · nella fascia ${a.win.start}–${a.win.end} non c'è spazio`}.`;
+  };
+  inp.oninput = anteprima; anteprima();
+  w.querySelectorAll("[data-go]").forEach(b => b.onclick = () => { moveOcc(a, orig, b.dataset.go); fine(); });
+  w.querySelector("#rp-go").onclick = () => {
+    const d = inp.value;
+    if (!d || d < T){ alert("Scegli un giorno da oggi in avanti."); return; }
+    moveOcc(a, orig, d); fine();
+  };
+  w.querySelector("#rp-done").onclick = () => {
+    S.log[giorno] = S.log[giorno] || {};
+    S.log[giorno][a.id] = true;
+    a.doneCount = (a.doneCount || 0) + 1;
+    if (!a.lastDone || giorno > a.lastDone) a.lastDone = giorno;
+    fine();
+  };
+  w.querySelector("#rp-skip").onclick = () => { skipOcc(a, orig); fine(); };
+  w.querySelector("#rp-close").onclick = () => w.remove();
 }
 
 function openPause(label){
@@ -2172,6 +2536,7 @@ const R_VUOTO_LABEL = "Non c'era nulla da fare";
 function undoneToday(T){
   const out = [];
   for (const a of planFor(T)) if (!isDone(T, a.id)) out.push({ id:a.id, name:a.name, kind:"attività" });
+  for (const x of gcalTodosOn(T)) if (!isDone(T, x.id)) out.push({ id:x.id, name:x.name, kind:"dal calendario" });
   for (const i of allRoutineItems()) if (!rDone(T, i.id)) out.push({ id:i.id, name:i.text, kind:"routine" });
   for (const r of remindersOn(T)) if (!readToday(T, r.id)) out.push({ id:r.id, name:r.text, kind:"promemoria" });
   for (const t of tripItemsOn(T)) if (!tripDone(t.tripId, t.id)) out.push({ id:t.id, name:t.text, kind:"valigia · " + t.tripName });
@@ -2447,9 +2812,16 @@ function resetStats(){
   S.closes = {};    // chiusure serali e note
   S.dayPlan = {};
   S.notices = [];
+  const T0 = today();
   S.activities.forEach(a => {
     a.doneCount = 0; a.skipCount = 0; a.lastDone = null;
-    a.scheduledFor = null; a.moved = null;
+    a.handled = {}; a.skips = {};
+    // gli spostamenti già decisi per i prossimi giorni restano
+    const mv = {};
+    for (const o in (a.moves || {})) if (a.moves[o] >= T0) mv[o] = a.moves[o];
+    a.moves = mv;
+    // da oggi si riparte: niente giri "saltati" nel passato
+    if (!a.from || a.from < T0) a.from = T0;
   });
   S.goals.forEach(g => { g.done = {}; });
   S.lastRun = null;
@@ -2639,6 +3011,7 @@ function tripHTML(T){
           </button>
           <div class="rbody"><div class="rtitle">${esc(i.text)}</div></div>
         </div>`).join("")}
+      ${(t.docs || []).length ? docsListHTML(t, false) : ""}
       <div class="row"><button class="btn ghost wide" data-tedit="${t.id}">Modifica la lista</button></div>
     </div>`;
   }).join("");
@@ -2686,6 +3059,12 @@ function openTrip(id){
     <div class="field"><label>Cosa preparare</label>
       <div id="v-items"></div>
       <button class="btn wide ghost" id="v-add" style="margin-top:4px">Aggiungi voce</button></div>
+    <div class="field"><label>Documenti</label>
+      <div class="card" id="v-docs" style="margin-bottom:9px"></div>
+      <button class="btn wide ghost" id="v-docadd">Aggiungi documenti</button>
+      <div class="hint" id="v-docstato">${syncPronto()
+        ? "Biglietti, prenotazioni, assicurazione: si salvano nel tuo deposito privato e restano anche qui, per aprirli senza rete."
+        : "La sincronizzazione è spenta: i documenti restano solo su questo dispositivo. Accendila nelle impostazioni per ritrovarli ovunque."}</div></div>
     <div class="btnrow">
       <button class="btn primary" id="v-save" style="flex:2">Salva</button>
       <button class="btn ghost" id="v-cancel">Annulla</button>
@@ -2716,10 +3095,44 @@ function openTrip(id){
     items.push({ id:"vi"+Date.now()+Math.floor(Math.random()*999), text:"" }); draw();
     const last = box.querySelector(".segline:last-child input"); if (last) last.focus();
   };
-  w.querySelector("#v-cancel").onclick = () => w.remove();
+  // i documenti si salvano subito, anche prima di premere Salva
+  const docBox = w.querySelector("#v-docs"), docStato = w.querySelector("#v-docstato");
+  const vivo = () => S.trips.find(x => x.id === t.id);
+  function drawDocs(){
+    const tv = vivo();
+    docBox.innerHTML = (tv && docsListHTML(tv, true)) || `<div class="empty" style="padding:13px 14px">Nessun documento.</div>`;
+    bindDocs(docBox, drawDocs);
+  }
+  drawDocs();
+  w.querySelector("#v-docadd").onclick = () => {
+    if (!vivo()){
+      // viaggio nuovo: lo salvo adesso, così i documenti hanno dove stare
+      const name = w.querySelector("#v-name").value.trim(), date = w.querySelector("#v-d").value;
+      if (!name || !date){ alert("Prima scrivi dove vai e il giorno della partenza."); return; }
+      S.trips.push({ ...t, name, date, lead, items: items.filter(i => i.text.trim()), docs: [] });
+      save();
+    }
+    const inp = document.createElement("input");
+    inp.type = "file"; inp.multiple = true;
+    inp.onchange = async () => {
+      const files = [...(inp.files || [])];
+      for (const f of files){
+        docStato.textContent = `Salvo ${f.name}…`;
+        try { await docAdd(vivo(), f); save(); }
+        catch(e){ alert(`${f.name}: non sono riuscito a caricarlo (${e && e.message || e}).`); }
+        drawDocs();
+      }
+      docStato.textContent = files.length ? `Fatto: ${files.length} ${files.length === 1 ? "documento aggiunto" : "documenti aggiunti"}.` : docStato.textContent;
+    };
+    inp.click();
+  };
+
+  w.querySelector("#v-cancel").onclick = () => { w.remove(); render(); };
   const clr = w.querySelector("#v-clear");
   if (clr) clr.onclick = () => { delete S.triplog[t.id]; save(); w.remove(); render(); };
   if (id) armDelete(w.querySelector("#v-del"), "Elimina viaggio", () => {
+    const tv = vivo();
+    if (tv) for (const d of (tv.docs || []).slice()) docRemove(tv, d.id);
     S.trips = S.trips.filter(x => x.id !== id);
     delete S.triplog[id];
     save(); w.remove(); render();
@@ -2729,12 +3142,185 @@ function openTrip(id){
     const date = w.querySelector("#v-d").value;
     if (!name){ alert("Serve un nome."); return; }
     if (!date){ alert("Serve il giorno della partenza."); return; }
-    const next = { ...t, name, date, lead, items: items.filter(i => i.text.trim()) };
+    const next = { ...t, ...(vivo() || {}), name, date, lead, items: items.filter(i => i.text.trim()) };
     const i = S.trips.findIndex(x => x.id === t.id);
     if (i >= 0) S.trips[i] = next; else S.trips.push(next);
     S.trips.sort((a,b) => a.date.localeCompare(b.date));
     save(); w.remove(); render();
   };
+}
+
+/* ============================================================
+   DOCUMENTI DEI VIAGGI — biglietti, prenotazioni, PDF, foto
+   Il file vive nel tuo deposito privato (lo stesso della sincronizzazione),
+   così lo ritrovi su ogni dispositivo. Una copia resta anche qui dentro,
+   per aprirlo senza rete: in aeroporto non si sa mai.
+   ============================================================ */
+const DOCDB = { db: null };
+
+function docDb(){
+  if (DOCDB.db) return Promise.resolve(DOCDB.db);
+  return new Promise((ok, ko) => {
+    try {
+      const r = indexedDB.open("coach-documenti", 1);
+      r.onupgradeneeded = () => r.result.createObjectStore("file");
+      r.onsuccess = () => { DOCDB.db = r.result; ok(r.result); };
+      r.onerror = () => ko(r.error);
+    } catch(e){ ko(e); }
+  });
+}
+async function docPut(id, blob){
+  const db = await docDb();
+  return new Promise((ok, ko) => {
+    const t = db.transaction("file", "readwrite");
+    t.objectStore("file").put(blob, id);
+    t.oncomplete = () => ok(true); t.onerror = () => ko(t.error);
+  });
+}
+async function docGet(id){
+  try {
+    const db = await docDb();
+    return await new Promise((ok) => {
+      const r = db.transaction("file").objectStore("file").get(id);
+      r.onsuccess = () => ok(r.result || null); r.onerror = () => ok(null);
+    });
+  } catch(e){ return null; }
+}
+async function docDel(id){
+  try {
+    const db = await docDb();
+    db.transaction("file", "readwrite").objectStore("file").delete(id);
+  } catch(e){}
+}
+
+const blobToB64 = blob => new Promise((ok, ko) => {
+  const r = new FileReader();
+  r.onload = () => ok(String(r.result).split(",")[1] || "");
+  r.onerror = () => ko(r.error);
+  r.readAsDataURL(blob);
+});
+
+const kb = n => n >= 1048576 ? `${(n / 1048576).toFixed(1).replace(".", ",")} MB` : `${Math.max(1, Math.round(n / 1024))} kB`;
+const docPathSafe = s => String(s || "documento").replace(/[^\w.\-]+/g, "_").slice(-80);
+
+async function ghDoc(metodo, path, corpo, raw){
+  const url = `https://api.github.com/repos/${S.sync.repo}/contents/${path.split("/").map(encodeURIComponent).join("/")}`;
+  return fetch(url, {
+    method: metodo,
+    headers: {
+      "Authorization": "Bearer " + S.sync.token,
+      "Accept": raw ? "application/vnd.github.raw" : "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28"
+    },
+    body: corpo ? JSON.stringify(corpo) : undefined
+  });
+}
+
+// Aggiunge un file a un viaggio: copia qui, poi su GitHub se la sincronizzazione c'è.
+async function docAdd(trip, file){
+  const id = "doc" + Date.now() + Math.floor(Math.random() * 999);
+  const doc = { id, name: file.name || "documento", type: file.type || "application/octet-stream", size: file.size || 0, at: Date.now() };
+  await docPut(id, file);
+  if (syncPronto()){
+    const path = `documenti/viaggi/${trip.id}/${id}-${docPathSafe(doc.name)}`;
+    const r = await ghDoc("PUT", path, { message: `documento ${doc.name}`, content: await blobToB64(file) });
+    if (!r.ok) throw new Error(`GitHub ha risposto ${r.status}`);
+    const j = await r.json();
+    doc.path = path; doc.sha = j.content && j.content.sha;
+  } else doc.local = true;
+  trip.docs = trip.docs || [];
+  trip.docs.push(doc);
+  return doc;
+}
+
+// Il file: dalla copia qui dentro se c'è, altrimenti da GitHub (e poi resta qui).
+async function docBlob(doc){
+  let b = await docGet(doc.id);
+  if (b) return b;
+  if (!doc.path || !syncPronto()) return null;
+  const r = await ghDoc("GET", doc.path, null, true);
+  if (!r.ok) throw new Error(`GitHub ha risposto ${r.status}`);
+  b = await r.blob();
+  if (doc.type) b = new Blob([b], { type: doc.type });
+  try { await docPut(doc.id, b); } catch(e){}
+  return b;
+}
+
+async function docOpen(doc){
+  try {
+    const b = await docBlob(doc);
+    if (!b){ alert(doc.local ? "Questo documento è rimasto sull'altro dispositivo: era stato aggiunto senza sincronizzazione." : "Non riesco a scaricarlo: serve la rete e la sincronizzazione accesa."); return; }
+    if (inApp() && typeof NAT.apriFile === "function"){
+      const r = NAT.apriFile(await blobToB64(b), doc.type || b.type || "", doc.name);
+      if (r && r !== "ok") alert("Non riesco ad aprirlo: " + r);
+      return;
+    }
+    const u = URL.createObjectURL(b);
+    const a = document.createElement("a");
+    a.href = u; a.target = "_blank"; a.rel = "noopener";
+    if (!/^(application\/pdf|image\/)/.test(doc.type || "")) a.download = doc.name;
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(u); a.remove(); }, 60000);
+  } catch(e){ alert("Non riesco ad aprirlo: " + (e && e.message || e)); }
+}
+
+async function docRemove(trip, docId){
+  const doc = (trip.docs || []).find(x => x.id === docId);
+  trip.docs = (trip.docs || []).filter(x => x.id !== docId);
+  docDel(docId);
+  if (doc && doc.path && doc.sha && syncPronto()){
+    try { await ghDoc("DELETE", doc.path, { message: `tolto ${doc.name}`, sha: doc.sha }); } catch(e){}
+  }
+}
+
+// Prima di partire i documenti si scaricano da soli, così ci sono anche offline.
+async function docPrefetch(){
+  if (!syncPronto()) return;
+  const T = today();
+  for (const t of S.trips){
+    if (daysBetween(T, t.date) > 14 || daysBetween(T, t.date) < -30) continue;
+    for (const d of (t.docs || [])){
+      if (await docGet(d.id)) continue;
+      try { await docBlob(d); } catch(e){}
+    }
+  }
+}
+
+function docsListHTML(t, modificabile){
+  const docs = t.docs || [];
+  if (!docs.length) return "";
+  return docs.map(d => `
+    <div class="row" style="align-items:center">
+      <div class="rbody">
+        <div class="rtitle" style="font-size:14.5px;word-break:break-word">${esc(d.name)}</div>
+        <div class="rmeta" data-docstato="${d.id}">${kb(d.size || 0)}${d.local ? "<span class=\"dot\">·</span>solo su questo dispositivo" : ""}</div>
+      </div>
+      <button class="btn" data-doc="${d.id}" data-trip="${t.id}" style="flex:0 0 auto;padding:8px 13px">Apri</button>
+      ${modificabile ? `<button class="btn ghost" data-docx="${d.id}" data-trip="${t.id}" style="flex:0 0 auto;min-width:38px;padding:8px 0;color:var(--warn)" aria-label="Togli">&times;</button>` : ""}
+    </div>`).join("");
+}
+
+// segna quali documenti sono già qui, pronti anche senza rete
+async function docMarkOffline(root){
+  for (const n of root.querySelectorAll("[data-docstato]")){
+    if (await docGet(n.dataset.docstato)) n.innerHTML += `<span class="dot">·</span>anche offline`;
+  }
+}
+
+function bindDocs(root, dopo){
+  root.querySelectorAll("[data-doc]").forEach(b => b.onclick = () => {
+    const t = S.trips.find(x => x.id === b.dataset.trip);
+    const d = t && (t.docs || []).find(x => x.id === b.dataset.doc);
+    if (d){ b.textContent = "…"; docOpen(d).finally(() => { b.textContent = "Apri"; }); }
+  });
+  root.querySelectorAll("[data-docx]").forEach(b => {
+    armDelete(b, "×", async () => {
+      const t = S.trips.find(x => x.id === b.dataset.trip);
+      if (t){ await docRemove(t, b.dataset.docx); save(); }
+      if (dopo) dopo();
+    });
+  });
+  docMarkOffline(root);
 }
 
 /* ============================================================
@@ -3003,6 +3589,7 @@ function openLedgerItem(id){
                : { id:"l"+Date.now(), who: preNome(), kind:"soldi", dir:"avere", amount:"", what:"",
                    date: T, due:"", note:"", moves:[], closed:null, snooze:null };
   let kind = e.kind, dir = e.dir;
+  const pAv = avvisoPicker("l-av", avvisoOf(e, "avviso", "conti"));
   const nomi = [...new Set(S.ledger.map(x => x.who).filter(Boolean))].slice(0,8);
   const w = document.createElement("div");
   w.className = "sheet";
@@ -3039,6 +3626,7 @@ function openLedgerItem(id){
         <input type="date" id="l-due" value="${e.due || ""}" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)"></div>
     </div>
     <div class="hint" style="margin-top:-6px">Senza scadenza te lo ricordo dopo ${S.ledgerAge} giorni, come hai scelto nelle impostazioni.</div>
+    <div class="field" id="l-avbox" style="margin-top:15px"><label>Avvisami della scadenza</label>${pAv.html}</div>
 
     <div class="field" style="margin-top:15px"><label>Nota</label>
       <input type="text" id="l-note" value="${esc(e.note || "")}" placeholder="Cena del 12, prestato per il trasloco…"></div>
@@ -3076,7 +3664,10 @@ function openLedgerItem(id){
     w.querySelectorAll("#l-dir .chip").forEach(b => b.classList.toggle("on", b.dataset.d === dir));
     w.querySelector("#l-soldibox").style.display = kind === "soldi" ? "" : "none";
     w.querySelector("#l-cosabox").style.display = kind === "cosa" ? "" : "none";
+    w.querySelector("#l-avbox").style.display = w.querySelector("#l-due").value ? "" : "none";
   }
+  pAv.bind(w);
+  w.querySelector("#l-due").onchange = () => paint();
   w.querySelectorAll("#l-kind .chip").forEach(b => b.onclick = () => { kind = b.dataset.k; paint(); });
   w.querySelectorAll("#l-dir .chip").forEach(b => b.onclick = () => { dir = b.dataset.d; paint(); });
   w.querySelectorAll("#l-nomi .chip").forEach(b => b.onclick = () => { w.querySelector("#l-who").value = b.dataset.n; });
@@ -3118,6 +3709,7 @@ function openLedgerItem(id){
                    date: w.querySelector("#l-date").value || today(),
                    due: w.querySelector("#l-due").value || "",
                    note: w.querySelector("#l-note").value.trim(),
+                   avviso: pAv.value(),
                    snooze: null };
     const i = S.ledger.findIndex(x => x.id === e.id);
     if (i >= 0) S.ledger[i] = next; else S.ledger.push(next);
@@ -3272,26 +3864,9 @@ function rowHTML(a, T){
       <div class="rtitle">${esc(a.name)}</div>
       <div class="rmeta">${a.win.start}–${a.win.end}<span class="dot">·</span>${durLabel(a.dur)}<span class="dot">·</span>${esc(a.cat)}</div>
       ${timeOn(T, a.id) ? `<span class="flag">${durLabel(timeOn(T, a.id))} registrati oggi</span>` : ""}
-      ${a.moved ? `<span class="flag moved">rimandata da ${GG3[dow(a.moved.from)]} ${prettyDate(a.moved.from)}</span>` : ""}
+      ${movedFrom(a, T) ? `<span class="flag moved">spostata da ${GG3[dow(movedFrom(a, T))]} ${prettyDate(movedFrom(a, T))}</span>` : ""}
     </div>
   </div>`;
-}
-
-function upcomingHTML(){
-  const all = pendingActs();
-  if (!all.length) return `<div class="empty">Nessuna attività in programma nei prossimi giorni.</div>`;
-  const pick = [...all].sort((a,b) => a.imp - b.imp || a.scheduledFor.localeCompare(b.scheduledFor)).slice(0,4);
-  pick.sort((a,b) => a.scheduledFor.localeCompare(b.scheduledFor) || a.imp - b.imp);
-  const rest = all.length - pick.length;
-  return pick.map(a => `
-    <div class="row">
-      <div class="imp i${a.imp}"></div>
-      <div class="rbody">
-        <div class="rtitle">${esc(a.name)}</div>
-        <div class="rmeta">${GG[dow(a.scheduledFor)]} ${prettyDate(a.scheduledFor)}<span class="dot">·</span>${durLabel(a.dur)}<span class="dot">·</span>${esc(a.cat)}</div>
-      </div>
-    </div>`).join("")
-    + (rest > 0 ? `<div class="row"><div class="rbody"><div class="rmeta">e altre ${rest} più avanti, meno importanti</div></div></div>` : "");
 }
 
 /* the day spine: work blocks on the rail, activities beside it */
@@ -3352,6 +3927,8 @@ function patchToday(){
   const rem = remindersOn(T);
   if (hr) hr.textContent = "Promemoria" + (rem.length ? ` · ${rem.filter(r=>readToday(T,r.id)).length}/${rem.length} letti` : "");
   patchTripHead();
+  const hc = document.getElementById("h-gctodo");
+  if (hc){ const l = gcalTodosOn(T); hc.textContent = `Dal calendario · ${l.filter(x => isDone(T, x.id)).length}/${l.length}`; }
   const hg = document.getElementById("h-goals");
   if (hg) hg.textContent = "Obiettivi" + (S.goals.length ? ` · ${S.goals.filter(goalDone).length}/${S.goals.length}` : "");
   const cm = document.getElementById("close-meta");
@@ -3370,7 +3947,7 @@ function toggleDone(id){
     if (a) a.doneCount = Math.max(0, (a.doneCount||0) - 1);
   } else {
     S.log[T][id] = true;
-    if (a){ a.doneCount = (a.doneCount||0) + 1; a.lastDone = T; a.moved = null; }
+    if (a){ a.doneCount = (a.doneCount||0) + 1; a.lastDone = T; }
   }
   save();
   markRow(id, S.log[T][id]);
@@ -3414,7 +3991,7 @@ function routineHTML(T){
   return `<h2 id="h-fascia">Adesso · ${esc(cur.name)} ${cur.start}–${cur.end}${D !== T ? " · di ieri" : ""}${cur.items.length ? ` · ${done}/${cur.items.length}` : ""}</h2>
     <div class="card">
       ${cur.items.length ? cur.items.map(i => routineItemHTML(i, D)).join("")
-        : `<div class="empty">Nessuna routine in questa fascia. Le aggiungi dalla scheda Attività.</div>`}
+        : `<div class="empty">Nessuna routine in questa fascia. Le aggiungi da Base → Routine.</div>`}
     </div>
     ${D !== T ? `<div class="hint" style="padding:0 2px">Sono passate le 00:00: queste spunte contano ancora per la giornata di ieri.</div>` : ""}${restHTML}`;
 }
@@ -3533,22 +4110,27 @@ function adviceHTML(a){
 const MM3 = ["gen","feb","mar","apr","mag","giu","lug","ago","set","ott","nov","dic"];
 const mdLabel = md => `${+md.slice(3)} ${MM3[+md.slice(0,2) - 1]}`;
 
-function recLabel(r){
+const GGL = ["dom","lun","mar","mer","gio","ven","sab"];
+const giorniLabel = days => (days || []).slice().sort((a,b)=>((a+6)%7)-((b+6)%7)).map(x => GGL[x]).join(", ");
+
+function recLabel(r, days){
   const n = r.n || 1;
-  if (r.type === "weekly")     return n === 1 ? "ogni settimana" : `ogni ${n} settimane`;
+  if (r.type === "weekly")     return (n === 1 ? "ogni settimana" : `ogni ${n} settimane`) + (days && days.length ? `: ${giorniLabel(days)}` : "");
   if (r.type === "everyNDays") return n === 1 ? "ogni giorno" : `ogni ${n} giorni`;
-  if (r.type === "timesWeek")  return `${n} volte a settimana`;
   if (r.type === "yearly")     return r.md ? `una volta l'anno, il ${mdLabel(r.md)}` : "una volta l'anno";
   if (r.type === "monthly")    return `${n === 1 ? "ogni mese" : `ogni ${n} mesi`}, il ${r.day || 1}`;
   if (r.type === "dates")      return (r.dates || []).length ? `nelle date: ${(r.dates||[]).slice().sort().map(mdLabel).join(", ")}` : "date da scegliere";
+  if (r.type === "once")       return r.date ? `una volta sola, ${prettyDate(r.date)}` : "una volta sola";
   return "una volta sola";
 }
 
 function openForm(id){
+  const T = today();
   const a = id ? S.activities.find(x => x.id === id)
-               : { id:"a"+Date.now(), name: preNome(), cat:"Casa", imp:2, dur:30, rec:{type:"weekly",n:1},
-                   days:[1], win:{start:"21:00",end:"22:00"}, maxDays:3,
-                   scheduledFor:null, lastDone:null, moved:null, doneCount:0, skipCount:0 };
+               : { id:"a"+Date.now(), name: preNome(), cat:"Casa", imp:2, dur:30, rec:{ type:"weekly", n:1 },
+                   days:[], win:{start:"21:00",end:"22:00"}, from: T,
+                   moves:{}, skips:{}, handled:{}, lastDone:null, doneCount:0, skipCount:0 };
+  const inizio = (a.rec && a.rec.start) || a.from || T;
   const w = document.createElement("div");
   w.className = "sheet";
   w.innerHTML = `
@@ -3558,8 +4140,12 @@ function openForm(id){
     <div class="field"><label>Nome</label>
       <input type="text" id="f-name" value="${esc(a.name)}" placeholder="Pulire casa"></div>
 
-    <div class="field"><label>Categoria</label>
-      <input type="text" id="f-cat" value="${esc(a.cat)}" placeholder="Casa, Lavoro, Personale…"></div>
+    <div class="two">
+      <div class="field"><label>Categoria</label>
+        <input type="text" id="f-cat" value="${esc(a.cat)}" placeholder="Casa, Lavoro…"></div>
+      <div class="field"><label>Durata (minuti)</label>
+        <input type="number" id="f-dur" min="5" step="5" value="${a.dur}"></div>
+    </div>
 
     <div class="field"><label>Importanza</label>
       <div class="chips" id="f-imp">
@@ -3567,25 +4153,24 @@ function openForm(id){
           `<button class="chip ${a.imp==v?"on":""}" data-v="${v}">${l}</button>`).join("")}
       </div></div>
 
-    <div class="two">
-      <div class="field"><label>Durata (minuti)</label>
-        <input type="number" id="f-dur" min="5" step="5" value="${a.dur}"></div>
-      <div class="field"><label>Entro quanti giorni</label>
-        <input type="number" id="f-max" min="0" max="30" value="${a.maxDays}"></div>
-    </div>
+    <div class="field"><label>Fascia oraria</label>
+      <div class="two">
+        <input type="time" id="f-ws" value="${a.win.start}">
+        <input type="time" id="f-we" value="${a.win.end}">
+      </div>
+      <div class="hint">Quando pensi di farla. Serve al coach per capire se quel giorno c'è spazio.</div></div>
 
-    <div class="field"><label>Ogni quanto</label>
+    <div class="field"><label>Quando torna</label>
       <select id="f-rt">
-        <option value="weekly"     ${a.rec.type=="weekly"?"selected":""}>Ogni tot settimane</option>
+        <option value="weekly"     ${a.rec.type=="weekly"?"selected":""}>Ogni settimana, nei giorni che scegli</option>
         <option value="everyNDays" ${a.rec.type=="everyNDays"?"selected":""}>Ogni tot giorni</option>
-        <option value="timesWeek"  ${a.rec.type=="timesWeek"?"selected":""}>Tot volte a settimana</option>
         <option value="monthly"    ${a.rec.type=="monthly"?"selected":""}>Ogni tot mesi, un giorno preciso</option>
         <option value="yearly"     ${a.rec.type=="yearly"?"selected":""}>Una volta l'anno, in una data</option>
         <option value="dates"      ${a.rec.type=="dates"?"selected":""}>In date precise dell'anno</option>
-        <option value="once"       ${a.rec.type=="once"?"selected":""}>Una volta sola</option>
+        <option value="once"       ${a.rec.type=="once"?"selected":""}>Una volta sola, in un giorno</option>
       </select>
       <div id="f-nbox" style="margin-top:9px">
-        <input type="number" id="f-rn" min="1" max="30" value="${a.rec.n||1}" style="width:100%">
+        <input type="number" id="f-rn" min="1" max="60" value="${a.rec.n||1}" style="width:100%">
         <div class="hint" id="f-nhint"></div>
       </div>
       <div id="f-daybox" style="margin-top:9px">
@@ -3607,19 +4192,22 @@ function openForm(id){
         </div>
         <div class="hint">Per le cose che tornano due o tre volte l'anno: cambio gomme, filtri, pulizia caldaia.</div>
       </div>
+      <div id="f-oncebox" style="margin-top:9px">
+        <label>Il giorno</label>
+        <input type="date" id="f-once" value="${a.rec.date || T}" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)">
+      </div>
+      <div id="f-startbox" style="margin-top:9px">
+        <label>A partire dal</label>
+        <input type="date" id="f-start" value="${inizio}" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)">
+      </div>
     </div>
 
-    <div class="field" id="f-daysbox"><label>Giorni ammessi</label>
+    <div class="field" id="f-daysbox"><label>Giorni</label>
       <div class="chips" id="f-days">
-        ${[1,2,3,4,5,6,0].map(d => `<button class="chip ${a.days.includes(d)?"on":""}" data-v="${d}">${GG3[d]}</button>`).join("")}
+        ${[1,2,3,4,5,6,0].map(d => `<button class="chip ${a.days.includes(d) && a.rec.type === "weekly" ? "on" : ""}" data-v="${d}">${GG3[d]}</button>`).join("")}
       </div></div>
 
-    <div class="field"><label>Fascia oraria</label>
-      <div class="two">
-        <input type="time" id="f-ws" value="${a.win.start}">
-        <input type="time" id="f-we" value="${a.win.end}">
-      </div>
-      <div class="hint">Il coach la piazza solo dentro questa fascia, e solo se ci sta senza sovrapporsi agli impegni fissi.</div></div>
+    <div class="card" id="f-advice" style="padding:13px 14px;margin-bottom:15px;border-color:var(--accent)"></div>
 
     <div class="btnrow">
       <button class="btn primary" id="f-save" style="flex:2">Salva</button>
@@ -3629,93 +4217,164 @@ function openForm(id){
     <div style="height:30px"></div>
   </div>`;
   document.body.appendChild(w);
+  const q = s => w.querySelector(s);
 
   const impSel = { v: a.imp };
   w.querySelectorAll("#f-imp .chip").forEach(c => c.onclick = () => {
     impSel.v = +c.dataset.v;
     w.querySelectorAll("#f-imp .chip").forEach(x => x.classList.toggle("on", x === c));
   });
-  const daySel = new Set(a.days);
+  const daySel = new Set(a.rec.type === "weekly" ? a.days : []);
+  function paintDays(){ w.querySelectorAll("#f-days .chip").forEach(c => c.classList.toggle("on", daySel.has(+c.dataset.v))); }
   w.querySelectorAll("#f-days .chip").forEach(c => c.onclick = () => {
     const v = +c.dataset.v;
     daySel.has(v) ? daySel.delete(v) : daySel.add(v);
-    c.classList.toggle("on", daySel.has(v));
+    paintDays(); consiglia();
   });
 
-  // che campi far vedere, a seconda di ogni quanto torna
   let dateList = (a.rec.dates || []).slice();
-  const rt = w.querySelector("#f-rt");
+  const rt = q("#f-rt");
   function drawDates(){
-    const box = w.querySelector("#f-dateschips");
+    const box = q("#f-dateschips");
     box.innerHTML = dateList.slice().sort().map(md =>
       `<button class="chip on" data-md="${md}">${mdLabel(md)} &times;</button>`).join("")
       || `<span class="hint" style="margin:0">Nessuna data ancora.</span>`;
     box.querySelectorAll("[data-md]").forEach(b => b.onclick = () => {
-      dateList = dateList.filter(x => x !== b.dataset.md); drawDates();
+      dateList = dateList.filter(x => x !== b.dataset.md); drawDates(); consiglia();
     });
   }
   function paintRec(){
     const t = rt.value;
-    const mostra = (id, si) => { const x = w.querySelector(id); if (x) x.style.display = si ? "" : "none"; };
-    mostra("#f-nbox", t === "weekly" || t === "everyNDays" || t === "timesWeek" || t === "monthly");
+    const mostra = (sel, si) => { const x = q(sel); if (x) x.style.display = si ? "" : "none"; };
+    mostra("#f-nbox", t === "weekly" || t === "everyNDays" || t === "monthly");
     mostra("#f-daybox", t === "monthly");
     mostra("#f-mdbox", t === "yearly");
     mostra("#f-datesbox", t === "dates");
-    mostra("#f-daysbox", t === "weekly" || t === "everyNDays" || t === "timesWeek");
-    const h = w.querySelector("#f-nhint");
-    if (h) h.textContent = t === "weekly" ? "ogni quante settimane" : t === "everyNDays" ? "ogni quanti giorni"
-      : t === "timesWeek" ? "quante volte a settimana" : t === "monthly" ? "ogni quanti mesi" : "";
+    mostra("#f-oncebox", t === "once");
+    mostra("#f-startbox", t === "weekly" || t === "everyNDays" || t === "monthly");
+    mostra("#f-daysbox", t === "weekly");
+    const h = q("#f-nhint");
+    if (h) h.textContent = t === "weekly" ? "ogni quante settimane (1 = tutte)" : t === "everyNDays" ? "ogni quanti giorni"
+      : t === "monthly" ? "ogni quanti mesi" : "";
+    consiglia();
   }
+
+  // l'attività come sarebbe se salvassi adesso: serve per i consigli
+  function bozza(){
+    const tipo = rt.value;
+    const rec = { type: tipo, n: Math.max(1, +q("#f-rn").value || 1) };
+    if (tipo === "monthly") rec.day = Math.min(31, Math.max(1, +q("#f-day").value || 1));
+    if (tipo === "yearly") rec.md = (q("#f-md").value || "").slice(5);
+    if (tipo === "dates") rec.dates = dateList.slice().sort();
+    if (tipo === "once") rec.date = q("#f-once").value || T;
+    const start = q("#f-start").value || T;
+    if (tipo === "weekly" || tipo === "everyNDays" || tipo === "monthly") rec.start = start;
+    return { ...a, rec, days: tipo === "weekly" ? [...daySel].sort() : [0,1,2,3,4,5,6],
+             dur: Math.max(5, +q("#f-dur").value || 30),
+             win: { start: q("#f-ws").value || "21:00", end: q("#f-we").value || "22:00" },
+             from: tipo === "once" ? rec.date : maxD(start, id ? T : start),
+             moves:{}, skips:{} };
+  }
+
+  // IL CONSIGLIO: dove starebbe meglio, e perché. Non decide niente.
+  const adv = q("#f-advice");
+  function consiglia(){
+    const b = bozza();
+    const win = b.win, dur = b.dur;
+    if (toMin(win.end) <= toMin(win.start)){ adv.innerHTML = `<div class="rmeta" style="color:var(--warn)">La fascia oraria finisce prima di iniziare.</div>`; return; }
+    if (toMin(win.end) - toMin(win.start) < dur){ adv.innerHTML = `<div class="rmeta" style="color:var(--warn)">La fascia ${win.start}–${win.end} è più corta della durata (${durLabel(dur)}).</div>`; return; }
+    const t = b.rec.type;
+    let html = "";
+    if (t === "weekly"){
+      const lista = weekdayAdvice(win, dur, a.id);
+      const k = Math.max(1, daySel.size);
+      const top = lista.slice(0, k).map(x => x.g);
+      const nomi = g => GGL[g];
+      html += `<div class="rtitle" style="font-size:14px">Il consiglio</div>
+        <div class="rmeta" style="color:var(--ink);margin-top:4px">Nella fascia ${win.start}–${win.end} ${k === 1 ? "il giorno più libero è" : "i giorni più liberi sono"} <b>${top.map(nomi).join(", ")}</b>, guardando le prossime quattro settimane.</div>`;
+      const pesanti = [...daySel].filter(g => { const x = lista.find(y => y.g === g); return x && (x.fitsN <= 2 || x.L.word === "piena"); });
+      for (const g of pesanti){
+        const x = lista.find(y => y.g === g);
+        html += `<div class="rmeta" style="color:var(--warn);margin-top:6px">${GG[g]}: ${x.fitsN <= 2 ? `nella fascia c'è spazio solo ${x.fitsN} ${x.fitsN === 1 ? "volta" : "volte"} su 4` : "giornata piena"} · ${esc(loadLine(x.L))}.</div>`;
+      }
+      const uguali = top.length === daySel.size && top.every(g => daySel.has(g));
+      if (!uguali) html += `<div class="why" style="margin-top:9px"><button class="on" id="f-usa">Usa ${top.map(nomi).join(" e ")}</button></div>`;
+      if (!daySel.size) html += `<div class="hint">Scegli tu i giorni: l'attività cadrà sempre lì. Se una volta la salti, ti propongo io quando recuperarla.</div>`;
+    } else if (t === "once"){
+      const L = dayLoad(b.rec.date, a.id);
+      const room = freeRoom(b.rec.date, win);
+      const sugg = suggestDays({ from:T, days:14, dur, win, actId:a.id }).filter(x => x.fits).slice(0, 3);
+      html += `<div class="rtitle" style="font-size:14px">${esc(dayChip(b.rec.date))}</div>
+        <div class="rmeta" style="margin-top:4px;${room < dur || L.word === "piena" ? "color:var(--warn)" : ""}">${esc(loadLine(L))}${room < dur ? ` · nella fascia ${win.start}–${win.end} non c'è spazio` : ""}.</div>`;
+      if (sugg.length) html += `<div class="rmeta" style="margin-top:9px;color:var(--ink)">I giorni più liberi nelle prossime due settimane:</div>
+        <div class="why" style="margin-top:6px">${sugg.map(x => `<button data-sd="${x.d}" class="${x.d === b.rec.date ? "on" : ""}">${esc(dayChip(x.d))} · ${x.L.word}</button>`).join("")}</div>`;
+    } else {
+      const primo = nextOcc(b, maxD(T, b.from), 400);
+      if (!primo){ adv.innerHTML = `<div class="rmeta">Scegli quando torna e ti dico com'è quel giorno.</div>`; return; }
+      const L = dayLoad(primo, a.id);
+      const room = freeRoom(primo, win);
+      html += `<div class="rtitle" style="font-size:14px">Il prossimo giro: ${esc(dayChip(primo).toLowerCase())}</div>
+        <div class="rmeta" style="margin-top:4px;${room < dur || L.word === "piena" ? "color:var(--warn)" : ""}">${esc(loadLine(L))}${room < dur ? ` · nella fascia ${win.start}–${win.end} non c'è spazio` : ""}.</div>`;
+      if (t === "everyNDays"){
+        const sugg = suggestDays({ from:T, days:Math.min(14, Math.max(3, +b.rec.n || 1)), dur, win, actId:a.id }).filter(x => x.fits).slice(0, 3);
+        if (sugg.length) html += `<div class="rmeta" style="margin-top:9px;color:var(--ink)">Per partire, i giorni più liberi:</div>
+          <div class="why" style="margin-top:6px">${sugg.map(x => `<button data-st="${x.d}" class="${x.d === b.rec.start ? "on" : ""}">${esc(dayChip(x.d))} · ${x.L.word}</button>`).join("")}</div>`;
+      } else if (room < dur || L.word === "piena"){
+        html += `<div class="hint">Le date fisse restano quelle: quando arriva il giorno, se non riesci, ti propongo io quando recuperare.</div>`;
+      }
+    }
+    adv.innerHTML = html;
+    const usa = adv.querySelector("#f-usa");
+    if (usa) usa.onclick = () => {
+      const k = Math.max(1, daySel.size);
+      const top = weekdayAdvice(b.win, b.dur, a.id).slice(0, k).map(x => x.g);
+      daySel.clear(); top.forEach(g => daySel.add(g));
+      paintDays(); consiglia();
+    };
+    adv.querySelectorAll("[data-sd]").forEach(x => x.onclick = () => { q("#f-once").value = x.dataset.sd; consiglia(); });
+    adv.querySelectorAll("[data-st]").forEach(x => x.onclick = () => { q("#f-start").value = x.dataset.st; consiglia(); });
+  }
+
   rt.onchange = paintRec;
-  drawDates(); paintRec();
-  w.querySelector("#f-dateadd").onclick = () => {
-    const v = w.querySelector("#f-datenew").value;
+  ["#f-ws","#f-we","#f-dur","#f-rn","#f-day","#f-md","#f-once","#f-start"].forEach(s => { const x = q(s); if (x) x.addEventListener("change", consiglia); });
+  drawDates(); paintDays(); paintRec();
+  q("#f-dateadd").onclick = () => {
+    const v = q("#f-datenew").value;
     if (!v) return;
     const md = v.slice(5);
     if (!dateList.includes(md)) dateList.push(md);
-    drawDates();
+    drawDates(); consiglia();
   };
 
-  w.querySelector("#f-cancel").onclick = () => w.remove();
-  if (id) armDelete(w.querySelector("#f-del"), "Elimina attività", () => {
+  q("#f-cancel").onclick = () => w.remove();
+  if (id) armDelete(q("#f-del"), "Elimina attività", () => {
     S.activities = S.activities.filter(x => x.id !== id);
     save(); w.remove(); render();
   });
 
-  w.querySelector("#f-save").onclick = () => {
-    const name = w.querySelector("#f-name").value.trim();
+  q("#f-save").onclick = () => {
+    const name = q("#f-name").value.trim();
     if (!name){ alert("Serve un nome."); return; }
-    const tipo = rt.value;
-    const aGiorni = tipo === "weekly" || tipo === "everyNDays" || tipo === "timesWeek";
-    if (aGiorni && !daySel.size){ alert("Scegli almeno un giorno ammesso."); return; }
+    const b = bozza();
+    const tipo = b.rec.type;
+    if (tipo === "weekly" && !daySel.size){ alert("Scegli almeno un giorno."); return; }
     if (tipo === "dates" && !dateList.length){ alert("Aggiungi almeno una data."); return; }
-    const mdVal = (w.querySelector("#f-md").value || "").slice(5);
-    if (tipo === "yearly" && !mdVal){ alert("Scegli il giorno."); return; }
-    const ws = w.querySelector("#f-ws").value, we = w.querySelector("#f-we").value;
-    if (toMin(we) <= toMin(ws)){ alert("La fascia oraria finisce prima di iniziare."); return; }
+    if (tipo === "yearly" && !b.rec.md){ alert("Scegli il giorno."); return; }
+    if (toMin(b.win.end) <= toMin(b.win.start)){ alert("La fascia oraria finisce prima di iniziare."); return; }
 
-    const rec = { type: tipo, n: Math.max(1, +w.querySelector("#f-rn").value || 1) };
-    if (tipo === "monthly") rec.day = Math.min(31, Math.max(1, +w.querySelector("#f-day").value || 1));
-    if (tipo === "yearly") rec.md = mdVal;
-    if (tipo === "dates") rec.dates = dateList.slice().sort();
-
+    // se cambi le regole di un'attività che esiste già, il passato resta com'era:
+    // le nuove regole valgono da oggi, così non spuntano giri "saltati" che non c'erano
+    const cambiata = id && (JSON.stringify(a.rec) !== JSON.stringify(b.rec) || JSON.stringify(a.days) !== JSON.stringify(b.days));
     const next = {
       ...a,
-      name, cat: w.querySelector("#f-cat").value.trim() || "Varie",
-      imp: impSel.v,
-      dur: Math.max(5, +w.querySelector("#f-dur").value || 30),
-      maxDays: Math.max(0, +w.querySelector("#f-max").value || 0),
-      rec,
-      days: aGiorni ? [...daySel].sort() : [0,1,2,3,4,5,6],
-      win: { start: ws, end: we },
-      scheduledFor: null, moved: null
+      name, cat: q("#f-cat").value.trim() || "Varie",
+      imp: impSel.v, dur: b.dur, rec: b.rec, days: b.days, win: b.win,
+      from: tipo === "once" ? b.rec.date : (id ? (cambiata ? maxD(b.rec.start || T, T) : (a.from || T)) : (b.rec.start || T)),
+      moves: a.moves || {}, skips: a.skips || {}, handled: a.handled || {}
     };
+    delete next.scheduledFor; delete next.moved; delete next.maxDays;
     const i = S.activities.findIndex(x => x.id === a.id);
     if (i >= 0) S.activities[i] = next; else S.activities.push(next);
-
-    if (toMin(we) - toMin(ws) < next.dur)
-      alert("Attenzione: la fascia oraria è più corta della durata, quindi non troverà mai spazio.");
-
     runEngine(); save(); w.remove(); render();
   };
 }
@@ -3855,9 +4514,9 @@ function runTargets(){
   for (const g of S.goals) if (!goalDone(g)) push(g.id, g.name, "obiettivo");
   for (const o of S.oneoffs) if (o.date === T) push(o.id, o.label, "appuntamento di oggi");
   for (const f of S.fixed) if (f.days.includes(d)) push(f.id, f.label, "impegno fisso");
-  if (S.gcalOn) for (const g of (GCAL.byDay[T] || [])) push("gc:" + g.label, g.label, "dal calendario");
+  if (S.gcalOn) for (const g of gcalOnDay(T)) push("gc:" + g.key, g.label, "dal calendario");
   for (const r of S.reminders) push(r.id, r.text, "promemoria");
-  for (const a of S.activities) if (a.scheduledFor !== T) push(a.id, a.name, "altra attività");
+  for (const a of S.activities) if (!occOn(a, T).length) push(a.id, a.name, "altra attività");
   for (const o of S.oneoffs) if (o.date > T) push(o.id, o.label, `appuntamento ${prettyDate(o.date)}`);
   return out;
 }
@@ -3927,8 +4586,7 @@ function applyDur(id){
   const a = S.activities.find(x => x.id === id); if (!a) return;
   const s = durSuggestion(a); if (!s) return;
   a.dur = s.min;
-  a.scheduledFor = null; a.moved = null;
-  runEngine(); save(); render();
+  save(); render();
 }
 
 // quante volte, negli ultimi 60 giorni, quella cosa non andava proprio fatta
@@ -4034,74 +4692,364 @@ function drawRun(){
 }
 
 /* ============================================================
-   GOOGLE CALENDAR — sola lettura, solo quando l'app è aperta
+   GOOGLE CALENDAR — letto dal calendario del telefono
+   L'app Android legge il calendario di Android, dove Google Calendar è già
+   sincronizzato: niente token, funziona anche senza rete. Sola lettura.
+   Gli eventi ripetuti sono impegni fissi, quelli singoli sono eventi.
+   Qui dentro puoi aggiungerci quello che Google non ha: importanza, note,
+   avvisi, se va spuntato per chiudere la giornata.
    ============================================================ */
-const GCAL = { byDay:{}, count:0, status:"idle", err:null, at:null, unsub:null };
+const GCAL = { byDay:{}, list:[], series:{}, count:0, status:"idle", err:null, at:null, cals:[] };
+const gcalSupported = () => inApp() && typeof NAT.leggiCalendario === "function";
 
-function gcalIngest(payload){
-  const evs = (payload && payload.events) || [];
-  const byDay = {};
-  let n = 0;
-  for (const ev of evs){
-    if (ev.status === "cancelled") continue;
-    if (ev.availability === "AVAILABILITY_FREE" || ev.transparency === "transparent") continue;
-    const sd = ev.start && ev.start.dateTime, ed = ev.end && ev.end.dateTime;
-    if (!sd || !ed) continue;                      // eventi di un giorno intero: non bloccano
-    const day = sd.slice(0,10);
-    const s = toMin(sd.slice(11,16));
-    let e = ed.slice(0,10) === day ? toMin(ed.slice(11,16)) : 1439;
-    if (e <= s) continue;
-    (byDay[day] = byDay[day] || []).push({ s, e, label: ev.summary || "Impegno" });
-    n++;
+function gcxOf(key){ return (S.gcx && S.gcx[key]) || {}; }
+
+// occupa il tempo? Di norma sì, tranne gli eventi di un giorno intero e quelli
+// segnati "libero" su Google. Quello che scegli qui dentro vince.
+function gcBusy(g){
+  if (g.allDay) return false;
+  const x = gcxOf(g.key);
+  if (x.busy === false) return false;
+  if (x.busy === true) return true;
+  return !g.free;
+}
+
+const isoUTC = ms => { const d = new Date(ms); return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(d.getUTCDate()).padStart(2,"0")}`; };
+
+// un calendario si riconosce da account e nome: l'id cambia da un telefono all'altro
+const calKey = c => `${c.account || ""}|${c.nome || ""}`;
+
+function gcalIngestNative(arr){
+  const byDay = {}, list = [], series = {};
+  const calPer = {};
+  for (const c of (GCAL.cals || [])) calPer[String(c.id)] = calKey(c);
+  for (const ev of (arr || [])){
+    if (ev.visibile === false) continue;
+    const ck = calPer[String(ev.calendario)] || String(ev.calendario);
+    if (S.gcalOff.includes(ck)) continue;
+    // la chiave è quella di Google (uguale su ogni dispositivo); in mancanza, quella del telefono
+    const key = ev.gserie ? "g:" + ev.gserie : ev.gid ? "g:" + ev.gid : "l:" + String(ev.serie || ev.id);
+    const recurring = !!(ev.regola || ev.serie);
+    const allDay = !!ev.tuttoIlGiorno;
+    let date, endDate, s, e;
+    if (allDay){
+      // gli eventi di tutto il giorno arrivano a mezzanotte UTC
+      date = isoUTC(ev.inizio);
+      endDate = isoUTC(Math.max(ev.inizio, ev.fine - 1));
+      s = 0; e = 1439;
+    } else {
+      const A = new Date(ev.inizio), B = new Date(ev.fine);
+      date = iso(A); endDate = iso(B);
+      s = A.getHours() * 60 + A.getMinutes();
+      e = B.getHours() * 60 + B.getMinutes();
+      if (endDate > date && e === 0){ endDate = addDays(endDate, -1); e = 1439; }
+    }
+    const inst = { key, id: String(ev.id), label: (ev.titolo || "").trim() || "Impegno", date, endDate,
+      start: toHHMM(s), end: toHHMM(Math.min(e, 1439)), s, e, allDay, recurring,
+      rrule: ev.regola || "", place: ev.luogo || "", note: ev.note || "",
+      cal: String(ev.calendario), calName: ev.nomeCalendario || "", free: !!ev.libero };
+    list.push(inst);
+    for (let d = date, i = 0; d <= endDate && i < 62; d = addDays(d, 1), i++){
+      const a = d === date ? s : 0;
+      const b = d === endDate ? e : 1439;
+      if (!allDay && b <= a) continue;
+      (byDay[d] = byDay[d] || []).push({ key, label: inst.label, s: a, e: b, allDay, free: inst.free, recurring, inst });
+    }
+    if (!series[key]) series[key] = { key, label: inst.label, recurring, rrule: inst.rrule, calName: inst.calName, place: inst.place, sample: inst, dates: [] };
+    series[key].dates.push(date);
+    if (!series[key].rrule && inst.rrule) series[key].rrule = inst.rrule;
   }
-  GCAL.byDay = byDay; GCAL.count = n; GCAL.status = "ok"; GCAL.err = null; GCAL.at = Date.now();
-  S.activities.forEach(a => { a.moved = null; });
-  runEngine(); render();
+  GCAL.byDay = byDay; GCAL.list = list; GCAL.series = series; GCAL.count = list.length;
+
+  // la prima volta non ti riempio di "nuovi": quello che c'è già lo considero visto
+  if (!S.gcalSeenInit){
+    for (const k in series) S.gcalSeen[k] = true;
+    S.gcalSeenInit = true;
+    salvaSolo();
+  }
 }
 
-async function gcalStart(){
-  if (!S.gcalOn) return;
-  let mcp = null;
-  try { mcp = await claude.use("mcp"); } catch(e){}
-  if (!mcp){ GCAL.status = "nodisp"; if (TAB === "opzioni") render(); return; }
-
+// Legge adesso. Non ridisegna: lo fa chi la chiama.
+function gcalRead(){
+  if (!S.gcalOn){ GCAL.status = "spento"; return; }
+  if (!gcalSupported()){ GCAL.status = inApp() ? "vecchia" : "browser"; return; }
+  let ok = false;
+  try { ok = NAT.calendarioConcesso(); } catch(e){}
+  if (!ok){ GCAL.status = "permesso"; GCAL.byDay = {}; GCAL.list = []; GCAL.series = {}; GCAL.count = 0; return; }
   const T = today();
-  const input = {
-    startTime: T + "T00:00:00+02:00",
-    endTime: addDays(T, 30) + "T23:59:59+02:00",
-    timeZone: "Europe/Rome",
-    orderBy: "startTime",
-    pageSize: 250
-  };
-  GCAL.status = "loading";
-  if (TAB === "opzioni") render();
-  try {
-    GCAL.unsub = mcp.watchTool("Google Calendar", "list_events", input, ev => {
-      if (ev.type === "data"){ gcalIngest(ev.result && ev.result.payload); return; }
-      const code = ev.error && ev.error.code;
-      if (code === "needs_reauth" || code === "server_not_connected" || code === "selection_required"){
-        GCAL.byDay = {}; GCAL.count = 0;            // dati ritirati: non tenerli
-      }
-      GCAL.status = "err"; GCAL.err = code || "errore";
-      render();
-    }, { refetchInterval: 15 * 60 * 1000 });
-  } catch(e){ GCAL.status = "err"; GCAL.err = "avvio"; }
+  const da = fromIso(addDays(T, -35)).getTime(), a = fromIso(addDays(T, 120)).getTime();
+  try { GCAL.cals = JSON.parse(NAT.calendari()) || []; } catch(e){ GCAL.cals = []; }
+  let raw;
+  try { raw = JSON.parse(NAT.leggiCalendario(da, a)); }
+  catch(e){ GCAL.status = "err"; GCAL.err = String(e && e.message || e); return; }
+  if (raw && !Array.isArray(raw) && raw.errore){ GCAL.status = "err"; GCAL.err = raw.errore; return; }
+  gcalIngestNative(raw);
+  GCAL.status = "ok"; GCAL.err = null; GCAL.at = Date.now();
 }
+
+function gcalStart(){
+  gcalRead();
+  runEngine(); render(); riprogrammaAvvisi();
+}
+
+function gcalAsk(){
+  if (!gcalSupported()) return;
+  try { NAT.chiediCalendario(); } catch(e){}
+}
+
+// il telefono ci racconta cosa è successo: permesso dato, app riaperta
+window.dalTelefono = (cosa, valore) => {
+  if (cosa === "calendario"){
+    if (valore === "si"){ S.gcalOn = true; salvaSolo(); }
+    gcalStart();
+  }
+  if (cosa === "ripreso" && S && S.gcalOn && gcalSupported()){
+    // non ridisegno se stai scrivendo in un foglio aperto
+    gcalRead(); runEngine();
+    if (!document.querySelector(".sheet")) render();
+    riprogrammaAvvisi();
+  }
+};
 
 function gcalMessage(){
-  if (!S.gcalOn) return "Spento. Il coach usa solo gli impegni scritti qui.";
+  if (!S.gcalOn) return "Spento. Coach usa solo quello che scrivi qui.";
   switch (GCAL.status){
-    case "loading": return "Sto leggendo il calendario…";
-    case "ok": return `${GCAL.count} impegni letti dal calendario, prossimi 30 giorni.`;
-    case "nodisp": return "Non disponibile in questa vista. Apri l'app dal link di Claude.";
-    case "err":
-      if (GCAL.err === "needs_reauth") return "Il collegamento è scaduto. Ricollega Google Calendar dalle impostazioni di Claude.";
-      if (GCAL.err === "server_not_connected") return "Google Calendar non risulta collegato al tuo account Claude.";
-      if (GCAL.err === "selection_required") return "Hai più account Google collegati: scegline uno in Claude.";
-      if (GCAL.err === "not_granted") return "Permesso non dato. Ricarica la pagina e accetta la richiesta.";
-      return "Il calendario non risponde. Riprova più tardi: gli impegni scritti qui funzionano lo stesso.";
-    default: return "In attesa…";
+    case "ok": {
+      const serie = Object.values(GCAL.series);
+      const fissi = serie.filter(x => x.recurring).length, singoli = serie.length - fissi;
+      return `Letto ${GCAL.at ? `alle ${new Date(GCAL.at).toTimeString().slice(0,5)}` : ""}: ${fissi} ${fissi === 1 ? "impegno ripetuto" : "impegni ripetuti"} e ${singoli} ${singoli === 1 ? "evento" : "eventi"} nei prossimi quattro mesi.`;
+    }
+    case "permesso": return "Serve il permesso di leggere il calendario del telefono.";
+    case "vecchia":  return "Questa versione dell'app Android non sa leggere il calendario: installa l'APK nuovo.";
+    case "browser":  return "Il calendario si legge solo dall'app Android. Nel browser vedi solo quello che scrivi qui.";
+    case "err":      return "Non sono riuscito a leggere il calendario: " + (GCAL.err || "errore");
+    case "spento":   return "Spento.";
+    default:         return "In attesa…";
   }
+}
+
+/* ---------- come si mostrano ---------- */
+const GIORNI_RR = { MO:1, TU:2, WE:3, TH:4, FR:5, SA:6, SU:0 };
+// "ogni settimana: lun, mer" da una regola di ripetizione di Google
+function rruleLabel(rr){
+  if (!rr) return "si ripete";
+  const p = Object.fromEntries(rr.split(";").map(x => x.split("=")));
+  const n = +p.INTERVAL || 1;
+  const giorni = (p.BYDAY || "").split(",").map(x => GIORNI_RR[x.slice(-2)]).filter(x => x !== undefined);
+  if (p.FREQ === "DAILY")   return n === 1 ? "ogni giorno" : `ogni ${n} giorni`;
+  if (p.FREQ === "WEEKLY")  return (n === 1 ? "ogni settimana" : `ogni ${n} settimane`) + (giorni.length ? `: ${giorniLabel(giorni)}` : "");
+  if (p.FREQ === "MONTHLY") return n === 1 ? "ogni mese" : `ogni ${n} mesi`;
+  if (p.FREQ === "YEARLY")  return "ogni anno";
+  return "si ripete";
+}
+
+function gcalWhen(g, d){
+  if (g.allDay) return g.endDate && g.endDate !== g.date ? `tutto il giorno · fino al ${prettyDate(g.endDate)}` : "tutto il giorno";
+  if (g.endDate && g.endDate !== g.date) return `dalle ${g.start} del ${prettyDate(g.date)} al ${prettyDate(g.endDate)}`;
+  return `${g.start}–${g.end}`;
+}
+
+// gli eventi singoli di Google in un giorno (non i ripetuti)
+function gcalSingles(d){
+  return (GCAL.byDay[d] || []).filter(g => !g.recurring && !gcBusy(g));
+}
+function gcalOnDay(d){
+  const visti = new Set();
+  return (GCAL.byDay[d] || []).filter(g => { if (visti.has(g.key)) return false; visti.add(g.key); return true; });
+}
+function gcalUpcoming(from, days){
+  const out = [], visti = new Set();
+  for (const g of GCAL.list){
+    if (g.recurring) continue;
+    if ((g.endDate || g.date) < from || g.date > addDays(from, days)) continue;
+    const k = g.key + "@" + g.date;
+    if (visti.has(k)) continue;
+    visti.add(k); out.push(g);
+  }
+  return out.sort((a,b) => a.date.localeCompare(b.date) || a.s - b.s);
+}
+
+// le cose di Google che hai segnato "da spuntare": entrano nel 100% della giornata
+function gcalTodosOn(d){
+  if (!S.gcalOn) return [];
+  return gcalOnDay(d).filter(g => gcxOf(g.key).todo).map(g => ({ id: "gc:" + g.key, key: g.key, name: g.label, imp: gcxOf(g.key).imp || 2, g }));
+}
+
+function gcalTodoHTML(T){
+  const lista = gcalTodosOn(T);
+  if (!lista.length) return "";
+  const fatte = lista.filter(x => isDone(T, x.id)).length;
+  return `<h2 id="h-gctodo">Dal calendario · ${fatte}/${lista.length}</h2>
+  <div class="card">${lista.map(x => `
+    <div class="row ${isDone(T, x.id) ? "done" : ""}" data-row="${x.id}">
+      <div class="imp i${x.imp}"></div>
+      <button class="tick" data-tick="${x.id}" aria-label="Segna come fatto">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+      </button>
+      <div class="rbody">
+        <div class="rtitle">${esc(x.name)}</div>
+        <div class="rmeta">${esc(gcalWhen(x.g.inst || x.g, T))}${gcxOf(x.key).note ? `<span class="dot">·</span>${esc(gcxOf(x.key).note)}` : ""}</div>
+      </div>
+      <button class="btn ghost" data-gc="${x.key}" data-gcd="${T}" style="min-width:40px;padding:8px 0" aria-label="Dettagli">&#9881;</button>
+    </div>`).join("")}</div>`;
+}
+
+// quello che è comparso su Google dall'ultima volta: te lo dico, e se vuoi aggiungi i dettagli
+function gcalNew(){
+  if (!S.gcalOn || GCAL.status !== "ok") return [];
+  const T = today();
+  return Object.values(GCAL.series)
+    .filter(x => !S.gcalSeen[x.key] && x.dates.some(d => d >= T))
+    .sort((a,b) => a.dates[0].localeCompare(b.dates[0]));
+}
+
+function gcalNewHTML(T){
+  const nuovi = gcalNew();
+  if (!nuovi.length) return "";
+  return `<h2>Nuovi da Google Calendar · ${nuovi.length}</h2>
+  <div class="card">
+    ${nuovi.slice(0, 6).map(x => {
+      const prossima = x.dates.find(d => d >= T) || x.dates[0];
+      return `<button class="actrow" data-gc="${x.key}" data-gcd="${prossima}">
+        <div class="imp" style="min-height:32px;background:${x.recurring ? "var(--busy)" : "var(--accent)"}"></div>
+        <div class="rbody">
+          <div class="rtitle">${esc(x.label)}</div>
+          <div class="rmeta">${x.recurring ? `impegno fisso · ${esc(rruleLabel(x.rrule))}` : `evento · ${esc(dayChip(prossima).toLowerCase())}${x.sample.allDay ? "" : ` alle ${x.sample.start}`}`}</div>
+        </div>
+        <span class="flag" style="margin:0">dettagli</span>
+      </button>`; }).join("")}
+    ${nuovi.length > 6 ? `<div class="row"><div class="rbody"><div class="rmeta">e altri ${nuovi.length - 6}</div></div></div>` : ""}
+    <div class="row"><button class="btn ghost wide" id="gcseen">Visti tutti</button></div>
+  </div>`;
+}
+
+// nella pagina Eventi: quelli che arrivano da Google, nei prossimi due mesi
+function gcalEventsHTML(T){
+  if (!S.gcalOn) return "";
+  if (GCAL.status !== "ok") return `<h2>Da Google Calendar</h2><div class="card"><div class="empty">${esc(gcalMessage())}</div></div>`;
+  const lista = gcalUpcoming(T, 60);
+  return `<h2>Da Google Calendar · prossimi due mesi</h2>
+  <div class="card">
+    ${lista.length ? lista.map(g => {
+      const ex = gcxOf(g.key);
+      const extra = [ex.imp ? ["","alta","media","bassa"][ex.imp] : "", ex.todo ? "da spuntare" : "", ex.avviso ? "con avviso" : "", ex.note ? "con nota" : ""].filter(Boolean);
+      return `<button class="actrow" data-gc="${g.key}" data-gcd="${g.date}">
+        <div class="imp ${ex.imp ? "i" + ex.imp : ""}" style="min-height:32px;${ex.imp ? "" : "background:var(--line)"}"></div>
+        <div class="rbody">
+          <div class="rtitle">${esc(g.label)}</div>
+          <div class="rmeta">${esc(dayChip(g.date))}<span class="dot">·</span>${esc(gcalWhen(g, g.date))}${g.place ? `<span class="dot">·</span>${esc(g.place)}` : ""}</div>
+          ${extra.length ? `<div class="rmeta" style="color:var(--accent)">${extra.join(" · ")}</div>` : ""}
+        </div>
+      </button>`; }).join("")
+    : `<div class="empty">Nessun evento singolo su Google nei prossimi due mesi.</div>`}
+  </div>
+  <div class="hint">Tocca un evento per aggiungere importanza, note e avvisi. Si creano e si cambiano su Google Calendar.</div>`;
+}
+
+// nella pagina Impegni fissi: le cose che si ripetono su Google
+function gcalFixedHTML(){
+  if (!S.gcalOn) return "";
+  if (GCAL.status !== "ok") return `<h2>Da Google Calendar</h2><div class="card"><div class="empty">${esc(gcalMessage())}</div></div>`;
+  const T = today();
+  const lista = Object.values(GCAL.series).filter(x => x.recurring && x.dates.some(d => d >= T))
+    .sort((a,b) => a.label.localeCompare(b.label));
+  return `<h2>Da Google Calendar</h2>
+  <div class="card">
+    ${lista.length ? lista.map(x => {
+      const ex = gcxOf(x.key);
+      return `<button class="actrow" data-gc="${x.key}">
+        <div class="imp" style="min-height:30px;background:${gcBusy(x.sample) ? "var(--busy)" : "var(--line)"}"></div>
+        <div class="rbody">
+          <div class="rtitle">${esc(x.label)}</div>
+          <div class="rmeta">${esc(rruleLabel(x.rrule))}${x.sample.allDay ? "" : `<span class="dot">·</span>${x.sample.start}–${x.sample.end}`}</div>
+          ${ex.todo || ex.note || ex.avviso ? `<div class="rmeta" style="color:var(--accent)">${[ex.todo ? "da spuntare" : "", ex.avviso ? "con avviso" : "", ex.note ? "con nota" : ""].filter(Boolean).join(" · ")}</div>` : ""}
+        </div>
+      </button>`; }).join("")
+    : `<div class="empty">Nessun impegno ripetuto su Google.</div>`}
+  </div>`;
+}
+
+// Il foglio di un evento di Google: quello che dice Google, più i dettagli tuoi.
+function openGcalItem(key, d){
+  const x = GCAL.series[key];
+  if (!x){ alert("Questo evento non è più nel calendario."); return; }
+  const g = (d && (GCAL.list.find(i => i.key === key && i.date === d))) || x.sample;
+  const ex = { ...gcxOf(key) };
+  S.gcalSeen[key] = true; salvaSolo();
+  const w = document.createElement("div");
+  w.className = "sheet";
+  const picker = avvisoPicker("gc-av", ex.avviso || { giorni:[], ora:"09:00", prima:0 }, { prima: !g.allDay });
+  let imp = ex.imp || 0, todo = !!ex.todo, busy = ex.busy === undefined ? (!g.allDay && !g.free) : !!ex.busy, show = !!ex.showInMonth || !x.recurring;
+  w.innerHTML = `
+  <div class="sheetin">
+    <h3>${esc(x.label)}</h3>
+    <div class="card" style="margin-bottom:18px">
+      <div class="stat"><span>Da</span><span>Google Calendar${x.calName ? ` · ${esc(x.calName)}` : ""}</span></div>
+      <div class="stat"><span>Tipo</span><span>${x.recurring ? "impegno fisso" : "evento"}</span></div>
+      <div class="stat"><span>Quando</span><span>${x.recurring ? esc(rruleLabel(x.rrule)) + (g.allDay ? "" : `, ${g.start}–${g.end}`) : `${esc(dayChip(g.date))}, ${esc(gcalWhen(g, g.date))}`}</span></div>
+      ${g.place ? `<div class="stat"><span>Dove</span><span>${esc(g.place)}</span></div>` : ""}
+    </div>
+    ${g.note ? `<div class="hint" style="margin:-8px 0 18px;white-space:pre-wrap">${esc(g.note.slice(0, 600))}</div>` : ""}
+    <div class="hint" style="margin-bottom:16px">Orari, titolo e ripetizione si cambiano su Google Calendar. Qui aggiungi quello che manca: vale ${x.recurring ? "per tutte le volte che si ripete" : "per questo evento"}.</div>
+
+    <div class="field"><label>Importanza</label>
+      <div class="chips" id="gc-imp">
+        ${[[1,"Alta"],[2,"Media"],[3,"Bassa"],[0,"Nessuna"]].map(([v,l]) => `<button class="chip" data-v="${v}">${l}</button>`).join("")}
+      </div></div>
+
+    <div class="field"><label>Come lo tratta Coach</label>
+      <div class="chips">
+        <button class="chip" id="gc-todo">Da spuntare in giornata</button>
+        <button class="chip" id="gc-busy">Occupa il tempo</button>
+        ${x.recurring ? `<button class="chip" id="gc-show">Mostra nei prossimi 30 giorni</button>` : ""}
+      </div>
+      <div class="hint">"Da spuntare" lo mette fra le cose di oggi: per chiudere la giornata al 100% va fatto. "Occupa il tempo" dice al coach che in quelle ore non sei libero.</div></div>
+
+    <div class="field"><label>Nota</label>
+      <textarea id="gc-note" rows="3" placeholder="Cosa portare, con chi, cosa preparare…" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);resize:vertical">${esc(ex.note || "")}</textarea></div>
+
+    <div class="field"><label>Avvisami</label>${picker.html}
+      <div class="hint">Google ti avvisa già con i suoi promemoria: questi sono in più, solo se li vuoi.</div></div>
+
+    <div class="btnrow">
+      <button class="btn primary" id="gc-save" style="flex:2">Salva</button>
+      <button class="btn ghost" id="gc-cancel">Chiudi</button>
+    </div>
+    ${Object.keys(ex).length ? `<div class="btnrow"><button class="btn danger wide" id="gc-clear">Togli i dettagli aggiunti</button></div>` : ""}
+    <div style="height:30px"></div>
+  </div>`;
+  document.body.appendChild(w);
+  picker.bind(w);
+  const paint = () => {
+    w.querySelectorAll("#gc-imp .chip").forEach(b => b.classList.toggle("on", +b.dataset.v === imp));
+    w.querySelector("#gc-todo").classList.toggle("on", todo);
+    const gb = w.querySelector("#gc-busy");
+    gb.classList.toggle("on", busy && !g.allDay);
+    gb.style.opacity = g.allDay ? .45 : 1;
+    const gs = w.querySelector("#gc-show"); if (gs) gs.classList.toggle("on", show);
+  };
+  w.querySelectorAll("#gc-imp .chip").forEach(b => b.onclick = () => { imp = +b.dataset.v; paint(); });
+  w.querySelector("#gc-todo").onclick = () => { todo = !todo; paint(); };
+  w.querySelector("#gc-busy").onclick = () => { if (g.allDay) return; busy = !busy; paint(); };
+  const gs = w.querySelector("#gc-show"); if (gs) gs.onclick = () => { show = !show; paint(); };
+  paint();
+  w.querySelector("#gc-cancel").onclick = () => { w.remove(); render(); };
+  const clr = w.querySelector("#gc-clear");
+  if (clr) armDelete(clr, "Togli i dettagli aggiunti", () => { delete S.gcx[key]; save(); w.remove(); render(); });
+  w.querySelector("#gc-save").onclick = () => {
+    const av = picker.value();
+    const nuovo = {};
+    if (imp) nuovo.imp = imp;
+    if (todo) nuovo.todo = true;
+    const busyDef = !g.allDay && !g.free;
+    if (!g.allDay && busy !== busyDef) nuovo.busy = busy;
+    if (x.recurring && show) nuovo.showInMonth = true;
+    const nota = w.querySelector("#gc-note").value.trim();
+    if (nota) nuovo.note = nota;
+    if (av.giorni.length || av.prima) nuovo.avviso = av;
+    if (Object.keys(nuovo).length) S.gcx[key] = nuovo; else delete S.gcx[key];
+    save(); w.remove(); render();
+  };
 }
 
 /* ============================================================
@@ -4330,38 +5278,78 @@ function openHealthEdit(id){
 }
 
 /* ============================================================
-   IMPOSTAZIONI
+   IMPOSTAZIONI — una pagina con le voci, ogni voce apre la sua
    ============================================================ */
+let OPTSUB = null;
+
+const campoOra = (id, v) => `<input type="time" id="${id}" value="${v}" style="width:112px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface)">`;
+const campoNum = (id, v, min, max, step) => `<input type="number" id="${id}" min="${min}" max="${max}" step="${step || 1}" value="${v}" style="width:78px;text-align:center;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface)">`;
+const sino = (id, on, si, no) => `<button class="btn ${on ? "primary" : ""}" id="${id}" style="flex:0 0 auto">${on ? (si || "Sì") : (no || "No")}</button>`;
+const riga = (titolo, nota, destra) => `<div class="row" style="align-items:center"><div class="rbody"><div class="rtitle">${titolo}</div>${nota ? `<div class="rmeta">${nota}</div>` : ""}</div>${destra || ""}</div>`;
+
+const AVV_NOMI = {
+  evento:      ["Eventi", "quelli che scrivi qui; per quelli di Google scegli evento per evento"],
+  pagamento:   ["Cedole, dividendi, interessi", "il giorno in cui un investimento paga"],
+  scadenzaInv: ["Scadenze degli investimenti", "obbligazioni, conti vincolati"],
+  uscita:      ["Uscite", "abbonamenti, bollette, spese fisse"],
+  obiettivo:   ["Obiettivi", "la scadenza di un obiettivo non ancora fatto"],
+  conti:       ["Dare e avere", "le voci con una data entro cui restituire"]
+};
+
+function opzVoci(){
+  const sm = `sveglia ${S.wake} · ${String(S.sleepH).replace(".", ",")} ore di sonno · chiusura ${S.closeAt}`;
+  const notif = inApp() ? (S.push.on ? `accese · riassunto alle ${S.push.ora}` : "spente") : "arrivano solo nell'app Android";
+  const gc = !S.gcalOn ? "spento" : GCAL.status === "ok" ? `acceso · ${Object.keys(GCAL.series).length} cose lette` : GCAL.status === "permesso" ? "manca il permesso" : GCAL.status === "browser" ? "solo nell'app Android" : GCAL.status === "vecchia" ? "serve l'app nuova" : "acceso";
+  const pausa = isPaused() ? `in pausa dal ${prettyDate(S.pause.from)}` : "attivo";
+  const sync = syncPronto() ? `collegata a ${S.sync.repo}` : "spenta";
+  return [
+    { id:"giornata", nome:"La giornata", nota: sm },
+    { id:"notifiche", nome:"Notifiche e avvisi", nota: notif },
+    { id:"calendario", nome:"Google Calendar", nota: gc },
+    { id:"pausa", nome:"Quando sei via", nota: pausa },
+    { id:"dati", nome:"Sincronizzazione e backup", nota: sync },
+    { id:"aspetto", nome:"Aspetto", nota: `${THEMES[S.skin].nome} · ${MODI[S.mode].toLowerCase()}` },
+    { id:"zero", nome:"Riparti da zero", nota: "azzera le statistiche o svuota tutto" }
+  ];
+}
+
 function renderOpzioni(){
-  const sm = sonnoMedio();
+  if (OPTSUB) return renderOpzioniSub();
+  let nativa = "";
+  try { if (inApp()) nativa = ` · app Android ${NAT.versione()}`; } catch(e){}
   el.innerHTML = `
   <div class="wrap">
     <header><div class="h-left">
       <div class="datebig">Impostazioni</div>
-      <div class="greet">Come funziona il coach e come si veste.</div>
+      <div class="greet">Tocca una voce per aprirla.</div>
     </div></header>
-
-    <h2>La tua giornata</h2>
     <div class="card">
-      <div class="row">
-        <div class="rbody">
-          <div class="rtitle">Ti svegli alle</div>
-          <div class="rmeta">Da qui parte la giornata sulla barra di Oggi.</div>
-        </div>
-        <input type="time" id="op-wake" value="${S.wake}" style="width:112px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface)">
-      </div>
-      <div class="row">
-        <div class="rbody">
-          <div class="rtitle">Ore di sonno</div>
-          <div class="rmeta">Quanto dormi di solito. Il resto è tempo in cui il coach può programmare.</div>
-        </div>
-        <input type="number" id="op-sleep" min="3" max="14" step="0.5" value="${S.sleepH}" style="width:78px;text-align:center;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface)">
-      </div>
-      <div class="row">
-        <div class="rbody">
-          <div class="rmeta">Sveglio dalle ${toHHMM(awakeFrom())} alle ${toHHMM(Math.min(1439, awakeTo()))}<span class="dot">·</span>${durLabel(awakeTo() - awakeFrom())} al giorno</div>
-        </div>
-      </div>
+      ${opzVoci().map(v => `
+        <button class="actrow" data-opt="${v.id}">
+          <div class="rbody">
+            <div class="rtitle">${v.nome}</div>
+            <div class="rmeta">${esc(v.nota)}</div>
+          </div>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ink-faint)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>
+        </button>`).join("")}
+    </div>
+    <div style="text-align:center;font-size:11.5px;color:var(--ink-faint);padding:18px 0 4px">versione ${VERSIONE_APP}${nativa}</div>
+  </div>`;
+  el.querySelectorAll("[data-opt]").forEach(b => b.onclick = () => { OPTSUB = b.dataset.opt; render(); });
+}
+
+function renderOpzioniSub(){
+  const v = OPTSUB;
+  const titolo = (opzVoci().find(x => x.id === v) || {}).nome || "Impostazioni";
+  let corpo = "";
+
+  if (v === "giornata"){
+    const sm = sonnoMedio();
+    corpo = `
+    <div class="card">
+      ${riga("Ti svegli alle", "Da qui parte la giornata sulla barra di Oggi.", campoOra("op-wake", S.wake))}
+      ${riga("Ore di sonno", "Il resto è il tempo in cui il coach ragiona sui tuoi giorni liberi.", campoNum("op-sleep", S.sleepH, 3, 14, 0.5))}
+      ${riga("", `Sveglio dalle ${toHHMM(awakeFrom())} alle ${toHHMM(Math.min(1439, awakeTo()))}<span class="dot">·</span>${durLabel(awakeTo() - awakeFrom())} al giorno`, "")}
     </div>
     ${sm ? `<div class="advice" style="border:1px solid var(--line);border-radius:var(--radius);margin-top:9px">
       Negli ultimi ${sm.n} giorni segnati hai dormito <b>${durLabel(sm.min)}</b> in media.
@@ -4370,132 +5358,99 @@ function renderOpzioni(){
 
     <h2>Chiusura serale</h2>
     <div class="card">
-      <div class="row">
-        <div class="rbody">
-          <div class="rtitle">A che ora chiedertelo</div>
-          <div class="rmeta">Da quest'ora fino alle 3 di notte compare il pulsante per chiudere la giornata.</div>
-        </div>
-        <input type="time" id="closeat" value="${S.closeAt}" style="width:112px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface)">
-      </div>
+      ${riga("A che ora chiedertelo", "Da quest'ora fino alle 3 di notte compare il pulsante per chiudere la giornata.", campoOra("closeat", S.closeAt))}
     </div>
 
-    <h2>Quando sei via</h2>
+    ${inApp() ? `<h2>Sveglia del telefono</h2>
     <div class="card">
-      <div class="row">
-        <div class="rbody">
-          <div class="rtitle">${isPaused() ? "Coach in pausa" : "Ferma tutto"}</div>
-          <div class="rmeta">${isPaused()
-            ? `Fermo dal ${prettyDate(S.pause.from)}${S.pause.to ? ` al ${prettyDate(S.pause.to)}` : ""}. Quando riprendi trovi il riepilogo di cosa è rimasto indietro.`
-            : "Viaggi, influenza, settimane storte: i giorni in pausa non entrano nelle medie e niente viene segnato come saltato."}</div>
-        </div>
-        <button class="btn ${isPaused() ? "primary" : ""}" id="op-pause">${isPaused() ? "Riprendi" : "Metti in pausa"}</button>
-      </div>
-    </div>
+      ${riga("Sveglia domattina", "La metto nell'orologio del telefono: suona anche se l'app è chiusa.", campoOra("op-sveglia", S.wake || "07:00"))}
+      <div class="row"><button class="btn wide" id="op-metti-sveglia">Metti la sveglia</button></div>
+    </div>` : ""}`;
+  }
 
-    <h2>Dare e avere</h2>
-    <div class="card">
-      <div class="row">
-        <div class="rbody">
-          <div class="rtitle">Quando farti vivo</div>
-          <div class="rmeta">Dopo quanti giorni una cosa prestata senza scadenza torna a farsi vedere in Oggi.</div>
-        </div>
-        <input type="number" id="op-ledage" min="0" max="365" step="5" value="${S.ledgerAge}" style="width:78px;text-align:center;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface)">
-      </div>
-    </div>
+  else if (v === "notifiche"){
+    corpo = `
+    ${inApp() ? `<div class="card">
+      ${riga("Notifiche", S.push.on ? "Accese. Programmo il prossimo mese ogni volta che apri l'app." : "Spente: niente arriva sul telefono.", sino("op-push", S.push.on, "Accese", "Spente"))}
+      ${riga("Il riassunto del mattino", "Cosa c'è da fare oggi, e cosa è da ridecidere.", campoOra("op-pushora", S.push.ora))}
+      ${riga("Le attività", "Un avviso all'inizio della loro fascia oraria.", sino("op-pushatt", S.push.attivita))}
+      ${riga("La chiusura serale", `Alle ${S.closeAt}, l'ora scelta in La giornata.`, sino("op-pushsera", S.push.sera))}
+      ${riga("Orari esatti", "Senza questo permesso Android può far scivolare le notifiche di qualche minuto.", `<button class="btn" id="op-esatte" style="flex:0 0 auto">Apri</button>`)}
+      <div class="row"><button class="btn wide" id="op-prova">Prova una notifica</button></div>
+    </div>`
+    : `<div class="card"><div class="empty">Questa è la pagina nel browser: qui le notifiche non arrivano. Nell'app Android sì, con gli avvisi scelti qui sotto.</div></div>`}
 
-    <h2>Frigo</h2>
+    <h2>Avvisi, se non scegli altro</h2>
     <div class="card">
-      <div class="row">
-        <div class="rbody">
-          <div class="rtitle">Avvisami quanti giorni prima</div>
-          <div class="rmeta">Sotto questa soglia la roba compare nella scheda Oggi. Gli scaduti restano lì finché non li togli.</div>
-        </div>
-        <input type="number" id="op-frigo" min="0" max="30" step="1" value="${fridgeWarnDays()}" style="width:78px;text-align:center;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface)">
-      </div>
+      ${Object.entries(AVV_NOMI).filter(([k,x]) => x).map(([k,[nome, nota]]) => `
+        <button class="actrow" data-avdef="${k}">
+          <div class="rbody">
+            <div class="rtitle">${nome}</div>
+            <div class="rmeta">${esc(avvisoLabel(avvisoOf(null, "", k), k === "evento"))}</div>
+            <div class="rmeta" style="color:var(--ink-faint)">${nota}</div>
+          </div>
+        </button>`).join("")}
     </div>
+    <div class="hint">Ogni voce può avere i suoi avvisi: si scelgono quando la crei o la modifichi. Questi valgono quando non scegli niente.</div>
 
-    <h2>Google Calendar</h2>
+    <h2>Quando le cose compaiono in Oggi</h2>
     <div class="card">
-      <div class="row">
-        <div class="rbody">
-          <div class="rtitle">Leggi il calendario</div>
-          <div class="rmeta">${gcalMessage()}</div>
-        </div>
-        <button class="btn ${S.gcalOn ? "primary" : ""}" id="gtog">${S.gcalOn ? "Acceso" : "Spento"}</button>
-      </div>
+      ${riga("Frigo", "Quanti giorni prima della scadenza la roba compare fra le cose da sapere.", campoNum("op-frigo", fridgeWarnDays(), 0, 30))}
+      ${riga("Dare e avere", "Dopo quanti giorni una cosa prestata senza scadenza torna a farsi vedere.", campoNum("op-ledage", S.ledgerAge, 0, 365, 5))}
+    </div>`;
+  }
+
+  else if (v === "calendario"){
+    const cals = GCAL.cals || [];
+    corpo = `
+    <div class="card">
+      ${riga("Leggi Google Calendar", esc(gcalMessage()), sino("gtog", S.gcalOn, "Acceso", "Spento"))}
+      ${S.gcalOn && GCAL.status === "permesso" ? `<div class="row"><button class="btn primary wide" id="gc-perm">Dai il permesso</button></div>` : ""}
+      ${S.gcalOn && GCAL.status === "ok" ? `<div class="row"><button class="btn wide" id="gc-read">Rileggi adesso</button></div>` : ""}
     </div>
-    <div class="hint">Sola lettura: quello che scrivi qui non finisce su Google. Gli eventi segnati come "libero" e quelli di un giorno intero vengono ignorati.</div>
+    <div class="hint">Lo leggo dal calendario del telefono, dove Google Calendar è già sincronizzato: niente password, funziona anche senza rete. Sola lettura: quello che scrivi qui non finisce su Google.</div>
 
-    <h2>Sul telefono</h2>
+    ${S.gcalOn && cals.length ? `<h2>Quali calendari</h2>
     <div class="card">
-      ${inApp() ? `
-      <div class="row">
+      ${cals.map(c => `<button class="actrow" data-gcal="${esc(calKey(c))}">
+        <div class="imp" style="min-height:28px;background:${esc(c.colore || "var(--line)")}"></div>
         <div class="rbody">
-          <div class="rtitle">Notifiche</div>
-          <div class="rmeta">${S.push.on ? "Accese" : "Spente"}. Programmo i prossimi sette giorni: la giornata al mattino, gli eventi mezz'ora prima, la valigia la sera prima, le uscite e le scadenze.</div>
+          <div class="rtitle">${esc(c.nome || "Calendario")}</div>
+          <div class="rmeta">${esc(c.account || "")}${c.visibile === false ? "<span class=\"dot\">·</span>nascosto nel telefono" : ""}</div>
         </div>
-        <button class="btn ${S.push.on ? "primary" : ""}" id="op-push">${S.push.on ? "Accese" : "Spente"}</button>
-      </div>
-      <div class="row">
-        <div class="rbody">
-          <div class="rtitle">Il riassunto del mattino</div>
-          <div class="rmeta">A che ora ti dico cosa c'è da fare.</div>
-        </div>
-        <input type="time" id="op-pushora" value="${S.push.ora}" style="width:112px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface)">
-      </div>
-      <div class="row">
-        <div class="rbody">
-          <div class="rtitle">Avviso della chiusura serale</div>
-          <div class="rmeta">All'ora che hai scelto qui sopra per chiudere la giornata.</div>
-        </div>
-        <button class="btn ${S.push.sera ? "primary" : ""}" id="op-pushsera">${S.push.sera ? "Sì" : "No"}</button>
-      </div>
-      <div class="row">
-        <div class="rbody">
-          <div class="rtitle">Sveglia domattina</div>
-          <div class="rmeta">La metto nell'orologio del telefono: suona anche se l'app è chiusa.</div>
-        </div>
-        <input type="time" id="op-sveglia" value="${S.wake || "07:00"}" style="width:112px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface)">
-      </div>
-      <div class="row" style="gap:9px">
-        <button class="btn" id="op-metti-sveglia" style="flex:1">Metti la sveglia</button>
-        <button class="btn" id="op-prova" style="flex:1">Prova una notifica</button>
-      </div>
-      <div class="row">
-        <div class="rbody">
-          <div class="rtitle">Permesso per gli orari esatti</div>
-          <div class="rmeta">Senza, Android può far scivolare le notifiche di qualche minuto.</div>
-        </div>
-        <button class="btn" id="op-esatte">Apri</button>
-      </div>`
-      : `<div class="empty">Qui dentro non posso mandarti notifiche: questa è una pagina nel browser. Nell'app Android compaiono notifiche, sveglie e timer.</div>`}
+        <span class="chip ${S.gcalOff.includes(calKey(c)) ? "" : "on"}" style="flex:0 0 auto">${S.gcalOff.includes(calKey(c)) ? "No" : "Sì"}</span>
+      </button>`).join("")}
     </div>
+    <div class="hint">Spegni quelli che non ti riguardano: festività, compleanni, calendari condivisi.</div>` : ""}
 
-    <h2>I tuoi dati</h2>
-    <div class="card">
-      <div class="row">
-        <div class="rbody">
-          <div class="rtitle">Backup</div>
-          <div class="rmeta">Un file con dentro tutto: attività, storico, conti, vini, diario. Tienilo da parte.</div>
-        </div>
-      </div>
-      <div class="row" style="gap:9px">
-        <button class="btn" id="op-export" style="flex:1">Esporta</button>
-        <button class="btn ghost" id="op-import" style="flex:1">Importa</button>
-      </div>
-    </div>
+    <h2>Come li tratta Coach</h2>
+    <div class="card"><div class="empty" style="color:var(--ink-soft)">
+      Le cose che si ripetono su Google diventano <b>impegni fissi</b>: occupano il tempo e le trovi in Base → Impegni fissi.
+      Quelle singole sono <b>eventi</b>: le trovi in Base → Eventi e nella giornata.
+      Toccane una per aggiungere quello che Google non ha: importanza, una nota, avvisi, oppure "da spuntare" per farla contare nella giornata.
+    </div></div>`;
+  }
 
-    <h2>Sincronizzazione</h2>
+  else if (v === "pausa"){
+    corpo = `
     <div class="card">
-      <div class="row">
-        <div class="rbody">
-          <div class="rtitle">Fra i tuoi dispositivi</div>
-          <div class="rmeta">${syncPronto()
-            ? `Collegata a ${esc(S.sync.repo)}. ${S.sync.last ? `Ultima volta: ${new Date(S.sync.last).toLocaleString("it-IT")}.` : ""}`
-            : "Metti un deposito GitHub privato e un token: i dati vivono lì, e ogni telefono vede le stesse cose."}</div>
-          ${SYNCSTATO !== "fermo" ? `<div class="rmeta" style="color:${String(SYNCSTATO).startsWith("errore") ? "var(--warn)" : "var(--done)"}">${esc(String(SYNCSTATO))}</div>` : ""}
-        </div>
-      </div>
+      ${riga(isPaused() ? "Coach in pausa" : "Ferma tutto", isPaused()
+        ? `Fermo dal ${prettyDate(S.pause.from)}${S.pause.to ? ` al ${prettyDate(S.pause.to)}` : ""}. Quando riprendi trovi il riepilogo di cosa è rimasto indietro.`
+        : "Viaggi, influenza, settimane storte: i giorni in pausa non entrano nelle medie e niente viene segnato come saltato.",
+        `<button class="btn ${isPaused() ? "primary" : ""}" id="op-pause" style="flex:0 0 auto">${isPaused() ? "Riprendi" : "Metti in pausa"}</button>`)}
+    </div>`;
+  }
+
+  else if (v === "dati"){
+    corpo = `
+    <div class="card">
+      <div class="row"><div class="rbody">
+        <div class="rtitle">Fra i tuoi dispositivi</div>
+        <div class="rmeta">${syncPronto()
+          ? `Collegata a ${esc(S.sync.repo)}. ${S.sync.last ? `Ultima volta: ${new Date(S.sync.last).toLocaleString("it-IT")}.` : ""}`
+          : "Metti un deposito GitHub privato e un token: i dati e i documenti dei viaggi vivono lì, e ogni dispositivo vede le stesse cose."}</div>
+        ${SYNCSTATO !== "fermo" ? `<div class="rmeta" style="color:${String(SYNCSTATO).startsWith("errore") ? "var(--warn)" : "var(--done)"}">${esc(String(SYNCSTATO))}</div>` : ""}
+      </div></div>
       <div class="row" style="display:block">
         <div class="field" style="margin-bottom:10px"><label>Deposito (utente/nome)</label>
           <input type="text" id="op-repo" value="${esc(S.sync.repo || "")}" placeholder="tuonome/coach-dati" autocapitalize="off" autocorrect="off"></div>
@@ -4509,7 +5464,18 @@ function renderOpzioni(){
       </div>
     </div>
 
-    <h2>Aspetto</h2>
+    <h2>Backup</h2>
+    <div class="card">
+      ${riga("Un file con dentro tutto", "Attività, storico, conti, vini, diario. I documenti dei viaggi no: quelli stanno nel deposito.", "")}
+      <div class="row" style="gap:9px">
+        <button class="btn" id="op-export" style="flex:1">Esporta</button>
+        <button class="btn ghost" id="op-import" style="flex:1">Importa</button>
+      </div>
+    </div>`;
+  }
+
+  else if (v === "aspetto"){
+    corpo = `
     <div class="card">
       ${Object.entries(THEMES).map(([k,t]) => {
         const c = t.soloScuro ? t.dark : (scuroOra() ? t.dark : t.light);
@@ -4527,96 +5493,117 @@ function renderOpzioni(){
       }).join("")}
     </div>
     <div class="chips" style="margin-top:12px">
-      ${Object.entries(MODI).map(([k,l]) =>
-        `<button class="chip ${S.mode === k ? "on" : ""}" data-mode="${k}">${l}</button>`).join("")}
+      ${Object.entries(MODI).map(([k,l]) => `<button class="chip ${S.mode === k ? "on" : ""}" data-mode="${k}">${l}</button>`).join("")}
     </div>
-    ${THEMES[S.skin].soloScuro ? `<div class="hint">Notte resta scuro comunque: è fatto per quello.</div>` : ""}
+    ${THEMES[S.skin].soloScuro ? `<div class="hint">Notte resta scuro comunque: è fatto per quello.</div>` : ""}`;
+  }
 
-    <h2>Riparti da zero</h2>
+  else if (v === "zero"){
+    corpo = `
     <div class="card">
-      <div class="row">
-        <div class="rbody">
-          <div class="rtitle">Azzera le statistiche</div>
-          <div class="rmeta">Via lo storico: chiusure, note, spunte, conteggi, salute, tempo registrato. Tutto quello che hai costruito resta.</div>
-        </div>
-      </div>
+      ${riga("Azzera le statistiche", "Via lo storico: chiusure, note, spunte, conteggi, salute, tempo registrato. Tutto quello che hai costruito resta.", "")}
       <div class="row"><button class="btn danger wide" id="rs-stats">Azzera le statistiche</button></div>
-      <div class="row">
-        <div class="rbody">
-          <div class="rtitle">Svuota tutto</div>
-          <div class="rmeta">L'app torna come appena aperta: spariscono anche attività, impegni, obiettivi, promemoria, conteggi, routine e cicli.</div>
-        </div>
-      </div>
+      ${riga("Svuota tutto", "L'app torna come appena aperta: spariscono anche attività, impegni, obiettivi, promemoria, conteggi, routine e cicli.", "")}
       <div class="row"><button class="btn danger wide" id="rs-all">Svuota tutto</button></div>
-    </div>
-    <div style="height:14px"></div>
+    </div>`;
+  }
+
+  el.innerHTML = `<div class="wrap">
+    <header><div class="h-left">
+      <button class="btn ghost" id="optback" style="padding:6px 12px;font-size:13px;margin-bottom:10px">&larr; Impostazioni</button>
+      <div class="datebig">${titolo}</div>
+    </div></header>
+    ${corpo}
+    <div style="height:20px"></div>
   </div>`;
+  bindOpzioni();
+}
 
-  el.querySelector("#op-wake").onchange = e => {
-    S.wake = e.target.value || "07:00"; save(); render();
-  };
-  el.querySelector("#op-sleep").onchange = e => {
-    S.sleepH = Math.min(14, Math.max(3, +e.target.value || 7)); save(); render();
-  };
-  const us = el.querySelector("[data-usesleep]");
-  if (us) us.onclick = () => {
-    S.sleepH = Math.round((+us.dataset.usesleep / 60) * 2) / 2; save(); render();
-  };
-  el.querySelector("#closeat").onchange = e => { S.closeAt = e.target.value || "21:00"; save(); };
+// un foglio per cambiare gli avvisi di partenza di un tipo di cosa
+function openAvvisoDef(tipo){
+  const [nome] = AVV_NOMI[tipo];
+  const p = avvisoPicker("ad-av", avvisoOf(null, "", tipo), { prima: tipo === "evento" });
+  const w = document.createElement("div");
+  w.className = "sheet";
+  w.innerHTML = `<div class="sheetin">
+    <h3>${nome}</h3>
+    <div class="hint" style="margin-bottom:14px">Valgono per le voci a cui non hai scelto avvisi diversi.</div>
+    ${p.html}
+    <div class="btnrow"><button class="btn primary" id="ad-save" style="flex:2">Salva</button><button class="btn ghost" id="ad-cancel">Annulla</button></div>
+    <div style="height:30px"></div></div>`;
+  document.body.appendChild(w);
+  p.bind(w);
+  w.querySelector("#ad-cancel").onclick = () => w.remove();
+  w.querySelector("#ad-save").onclick = () => { S.avvisiDef[tipo] = p.value(); save(); w.remove(); render(); };
+}
+
+function bindOpzioni(){
   const q = id => el.querySelector("#" + id);
-  const push = q("op-push");
-  if (push) push.onclick = () => { S.push.on = !S.push.on; save(); render(); };
-  const pushora = q("op-pushora");
-  if (pushora) pushora.onchange = e => { S.push.ora = e.target.value || "08:00"; save(); render(); };
-  const pushsera = q("op-pushsera");
-  if (pushsera) pushsera.onclick = () => { S.push.sera = !S.push.sera; save(); render(); };
-  const mettiSv = q("op-metti-sveglia");
-  if (mettiSv) mettiSv.onclick = () => {
-    const ora = q("op-sveglia") ? q("op-sveglia").value : S.wake;
-    if (!svegliaTelefono(ora, "Coach"))
-      alert("Non sono riuscito ad aprire l'orologio del telefono.");
-  };
-  const prova = q("op-prova");
-  if (prova) prova.onclick = () => provaNotifica();
-  const esatte = q("op-esatte");
-  if (esatte) esatte.onclick = () => { try { NAT.apriImpostazioniSveglie(); } catch(e){} };
+  const on = (id, ev, fn) => { const x = q(id); if (x) x[ev] = fn; };
+  on("optback", "onclick", () => { OPTSUB = null; render(); });
 
-  q("op-export").onclick = () => esportaBackup();
-  q("op-import").onclick = () => importaBackup();
-  q("op-sync").onclick = () => {
+  // la giornata
+  on("op-wake", "onchange", e => { S.wake = e.target.value || "07:00"; save(); render(); });
+  on("op-sleep", "onchange", e => { S.sleepH = Math.min(14, Math.max(3, +e.target.value || 7)); save(); render(); });
+  const us = el.querySelector("[data-usesleep]");
+  if (us) us.onclick = () => { S.sleepH = Math.round((+us.dataset.usesleep / 60) * 2) / 2; save(); render(); };
+  on("closeat", "onchange", e => { S.closeAt = e.target.value || "21:00"; save(); });
+  on("op-metti-sveglia", "onclick", () => {
+    const ora = q("op-sveglia") ? q("op-sveglia").value : S.wake;
+    if (!svegliaTelefono(ora, "Coach")) alert("Non sono riuscito ad aprire l'orologio del telefono.");
+  });
+
+  // notifiche
+  on("op-push", "onclick", () => { S.push.on = !S.push.on; save(); render(); });
+  on("op-pushora", "onchange", e => { S.push.ora = e.target.value || "08:00"; save(); render(); });
+  on("op-pushatt", "onclick", () => { S.push.attivita = !S.push.attivita; save(); render(); });
+  on("op-pushsera", "onclick", () => { S.push.sera = !S.push.sera; save(); render(); });
+  on("op-prova", "onclick", () => provaNotifica());
+  on("op-esatte", "onclick", () => { try { NAT.apriImpostazioniSveglie(); } catch(e){} });
+  el.querySelectorAll("[data-avdef]").forEach(b => b.onclick = () => openAvvisoDef(b.dataset.avdef));
+  on("op-frigo", "onchange", e => { S.fridgeWarn = Math.max(0, Math.min(30, Math.round(+e.target.value || 0))); save(); render(); });
+  on("op-ledage", "onchange", e => { S.ledgerAge = Math.max(0, Math.min(365, Math.round(+e.target.value || 0))); save(); render(); });
+
+  // calendario
+  on("gtog", "onclick", () => {
+    S.gcalOn = !S.gcalOn;
+    save();
+    if (S.gcalOn && gcalSupported()){
+      let ok = false; try { ok = NAT.calendarioConcesso(); } catch(e){}
+      if (!ok){ gcalAsk(); return; }
+    }
+    gcalStart();
+  });
+  on("gc-perm", "onclick", () => gcalAsk());
+  on("gc-read", "onclick", () => gcalStart());
+  el.querySelectorAll("[data-gcal]").forEach(b => b.onclick = () => {
+    const id = String(b.dataset.gcal);
+    S.gcalOff = S.gcalOff.includes(id) ? S.gcalOff.filter(x => x !== id) : [...S.gcalOff, id];
+    save(); gcalStart();
+  });
+
+  // pausa
+  on("op-pause", "onclick", () => { if (isPaused()) endPause(); else openPause(""); });
+
+  // dati
+  on("op-export", "onclick", () => esportaBackup());
+  on("op-import", "onclick", () => importaBackup());
+  on("op-sync", "onclick", () => {
     S.sync.repo = q("op-repo").value.trim().replace(/^https?:\/\/github\.com\//, "").replace(/\.git$/, "");
     S.sync.token = q("op-token").value.trim();
     S.sync.sha = null;
     save();
     sincronizza();
-  };
-  q("op-syncauto").onclick = () => { S.sync.auto = !S.sync.auto; save(); render(); };
+  });
+  on("op-syncauto", "onclick", () => { S.sync.auto = !S.sync.auto; save(); render(); });
 
-  el.querySelector("#op-pause").onclick = () => { if (isPaused()) endPause(); else openPause(""); };
-  el.querySelector("#op-ledage").onchange = e => {
-    S.ledgerAge = Math.max(0, Math.min(365, Math.round(+e.target.value || 0)));
-    save(); render();
-  };
-  el.querySelector("#op-frigo").onchange = e => {
-    S.fridgeWarn = Math.max(0, Math.min(30, Math.round(+e.target.value || 0)));
-    save(); render();
-  };
-  el.querySelectorAll("[data-skin]").forEach(b => b.onclick = () => {
-    S.skin = b.dataset.skin; save(); applyTheme(); render();
-  });
-  el.querySelectorAll("[data-mode]").forEach(b => b.onclick = () => {
-    S.mode = b.dataset.mode; save(); applyTheme(); render();
-  });
-  armDelete(el.querySelector("#rs-stats"), "Azzera le statistiche", () => { resetStats(); render(); });
-  armDelete(el.querySelector("#rs-all"), "Svuota tutto", () => { resetAll(); TAB = "oggi"; render(); });
-  el.querySelector("#gtog").onclick = () => {
-    S.gcalOn = !S.gcalOn;
-    if (!S.gcalOn){
-      if (GCAL.unsub){ try{ GCAL.unsub(); }catch(e){} GCAL.unsub = null; }
-      GCAL.byDay = {}; GCAL.count = 0; GCAL.status = "idle";
-      save(); runEngine(); render();
-    } else { save(); render(); gcalStart(); }
-  };
+  // aspetto
+  el.querySelectorAll("[data-skin]").forEach(b => b.onclick = () => { S.skin = b.dataset.skin; save(); applyTheme(); render(); });
+  el.querySelectorAll("[data-mode]").forEach(b => b.onclick = () => { S.mode = b.dataset.mode; save(); applyTheme(); render(); });
+
+  // riparti da zero
+  const rs = q("rs-stats"); if (rs) armDelete(rs, "Azzera le statistiche", () => { resetStats(); render(); });
+  const ra = q("rs-all");   if (ra) armDelete(ra, "Svuota tutto", () => { resetAll(); TAB = "oggi"; OPTSUB = null; render(); });
 }
 
 function oneoffList(){
@@ -4634,8 +5621,9 @@ function eventsOn(d){
 // quelli che arrivano, dentro la finestra di preavviso che hai scelto per ognuno
 function eventsSoon(d){
   return S.oneoffs.filter(o => {
-    if (!o.warn || o.date <= d) return false;
-    return daysBetween(d, o.date) <= o.warn;
+    if (o.date <= d) return false;
+    const g = avvisoOf(o, "avviso", "evento").giorni;
+    return g.length && daysBetween(d, o.date) <= Math.max(...g);
   }).sort((a,b) => a.date.localeCompare(b.date));
 }
 
@@ -4674,12 +5662,12 @@ function eventsHTML(T){
   <div class="card">${presto.map(o => eventRow(o, T, true)).join("")}</div>` : ""}`;
 }
 
-const WARNS = [[0,"Nessuno"],[1,"Il giorno prima"],[3,"3 giorni prima"],[7,"Una settimana prima"]];
 
 function openOneoff(id){
   const o = id ? S.oneoffs.find(x => x.id === id)
                : { id:"o"+Date.now(), label: preNome(), date: today(), endDate: today(), start:"17:00", end:"18:00",
                    allDay:false, busy:true, warn:0, place:"", note:"" };
+  const pAv = avvisoPicker("o-av", avvisoOf(o, "avviso", "evento"), { prima: true });
   const w = document.createElement("div");
   w.className = "sheet";
   w.innerHTML = `
@@ -4701,6 +5689,7 @@ function openOneoff(id){
         <input type="date" id="o-d2" value="${o.endDate || o.date}" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)"></div>
     </div>
     <div class="hint" style="margin-top:-6px">Se dura un giorno solo lascia le due date uguali.</div>
+    <div class="card" id="o-advice" style="padding:13px 14px;margin:12px 0 4px;border-color:var(--accent)"></div>
 
     <div class="field" id="o-timebox" style="margin-top:15px"><label>Orario</label>
       <div class="two">
@@ -4714,11 +5703,7 @@ function openOneoff(id){
     <div class="field"><label>Nota</label>
       <input type="text" id="o-n" value="${esc(o.note || "")}" placeholder="Portare i documenti, pagare in contanti…"></div>
 
-    <div class="field"><label>Avvisami prima</label>
-      <div class="chips" id="o-warn">
-        ${WARNS.map(([v,l]) => `<button class="chip" data-w="${v}">${l}</button>`).join("")}
-      </div>
-      <div class="hint">L'avviso compare in cima a Oggi quando apri l'app: qui dentro non arrivano notifiche al telefono.</div></div>
+    <div class="field"><label>Avvisami</label>${pAv.html}</div>
 
     <div class="field"><label>Come lo tratta il coach</label>
       <div class="chips">
@@ -4736,26 +5721,53 @@ function openOneoff(id){
   </div>`;
   document.body.appendChild(w);
 
-  let allDay = !!o.allDay, busyO = o.busy !== false, showO = o.showInMonth !== false, warn = o.warn || 0;
+  let allDay = !!o.allDay, busyO = o.busy !== false, showO = o.showInMonth !== false;
   const oShow = w.querySelector("#o-show"), oBusy = w.querySelector("#o-busy");
   function paintEv(){
     w.querySelectorAll("#o-kind .chip").forEach(b => b.classList.toggle("on", (b.dataset.a === "1") === allDay));
-    w.querySelectorAll("#o-warn .chip").forEach(b => b.classList.toggle("on", +b.dataset.w === warn));
     w.querySelector("#o-timebox").style.display = allDay ? "none" : "";
     oBusy.classList.toggle("on", busyO && !allDay);
     oBusy.style.opacity = allDay ? .45 : 1;
     oShow.classList.toggle("on", showO);
   }
   w.querySelectorAll("#o-kind .chip").forEach(b => b.onclick = () => { allDay = b.dataset.a === "1"; paintEv(); });
-  w.querySelectorAll("#o-warn .chip").forEach(b => b.onclick = () => { warn = +b.dataset.w; paintEv(); });
+  pAv.bind(w);
+  // IL CONSIGLIO: com'è messo quel giorno, cosa si sovrappone, e i giorni più liberi
+  const adv = w.querySelector("#o-advice");
+  function consigliaEv(){
+    const d = w.querySelector("#o-d").value;
+    if (!d){ adv.innerHTML = ""; return; }
+    const L = dayLoad(d);
+    const s0 = toMin(w.querySelector("#o-s").value || "00:00"), e0 = toMin(w.querySelector("#o-e").value || "00:00");
+    const sopra = allDay ? [] : busyLabeled(d).filter(b => b.s < e0 && b.e > s0 && !(b.src === "singolo" && b.label === o.label));
+    const pieno = L.word === "piena" || sopra.length;
+    let html = `<div class="rtitle" style="font-size:14px">${esc(dayChip(d))}</div>
+      <div class="rmeta" style="margin-top:4px;${pieno ? "color:var(--warn)" : ""}">${esc(loadLine(L))}.</div>`;
+    if (sopra.length) html += `<div class="rmeta" style="color:var(--warn);margin-top:4px">Si sovrappone a: ${sopra.map(b => `${esc(b.label)} ${toHHMM(b.s)}–${toHHMM(b.e)}`).join(", ")}.</div>`;
+    if (pieno){
+      const dur = allDay ? 0 : Math.max(0, e0 - s0);
+      const alt = suggestDays({ from: today(), days: 14, dur, win: allDay ? null : { start: w.querySelector("#o-s").value, end: w.querySelector("#o-e").value } })
+        .filter(x => x.fits && x.d !== d).slice(0, 3);
+      if (alt.length) html += `<div class="rmeta" style="margin-top:9px;color:var(--ink)">Se puoi sceglierlo tu, quelli più liberi${allDay ? "" : " a quell'ora"}:</div>
+        <div class="why" style="margin-top:6px">${alt.map(x => `<button data-od="${x.d}">${esc(dayChip(x.d))} · ${x.L.word}</button>`).join("")}</div>`;
+    }
+    adv.innerHTML = html;
+    adv.querySelectorAll("[data-od]").forEach(b => b.onclick = () => {
+      const dd = b.dataset.od, d1 = w.querySelector("#o-d"), d2 = w.querySelector("#o-d2");
+      const lung = Math.max(0, daysBetween(d1.value, d2.value || d1.value));
+      d1.value = dd; d2.value = addDays(dd, lung); consigliaEv();
+    });
+  }
+  ["#o-d","#o-s","#o-e"].forEach(sel => w.querySelector(sel).addEventListener("change", consigliaEv));
+  w.querySelectorAll("#o-kind .chip").forEach(b => b.addEventListener("click", consigliaEv));
   oBusy.onclick = () => { if (allDay) return; busyO = !busyO; paintEv(); };
   oShow.onclick = () => { showO = !showO; paintEv(); };
   paintEv();
+  consigliaEv();
 
   w.querySelector("#o-cancel").onclick = () => w.remove();
   if (id) armDelete(w.querySelector("#o-del"), "Elimina evento", () => {
     S.oneoffs = S.oneoffs.filter(x => x.id !== id);
-    S.activities.forEach(a => { a.scheduledFor = null; a.moved = null; });
     runEngine(); save(); w.remove(); render();
   });
   w.querySelector("#o-save").onclick = () => {
@@ -4768,13 +5780,12 @@ function openOneoff(id){
     if (fine < date) fine = date;
     if (!allDay && fine === date && toMin(e) <= toMin(s)){ alert("L'orario finisce prima di iniziare."); return; }
     const next = { ...o, label, date, endDate: fine, start:s, end:e, allDay,
-                   busy: allDay ? false : busyO, warn,
+                   busy: allDay ? false : busyO, avviso: pAv.value(),
                    place: w.querySelector("#o-p").value.trim(),
                    note: w.querySelector("#o-n").value.trim(),
                    showInMonth: showO };
     const i = S.oneoffs.findIndex(x => x.id === o.id);
     if (i >= 0) S.oneoffs[i] = next; else S.oneoffs.push(next);
-    S.activities.forEach(a => { a.scheduledFor = null; a.moved = null; });
     runEngine(); save(); w.remove(); render();
   };
 }
@@ -4862,7 +5873,6 @@ function openFixed(id){
   w.querySelector("#x-cancel").onclick = () => w.remove();
   if (id) armDelete(w.querySelector("#x-del"), "Elimina impegno", () => {
     S.fixed = S.fixed.filter(x => x.id !== id);
-    S.activities.forEach(a => { a.scheduledFor = null; a.moved = null; });
     runEngine(); save(); w.remove(); render();
   });
   w.querySelector("#x-save").onclick = () => {
@@ -4873,7 +5883,6 @@ function openFixed(id){
                    days:[...daySel].sort(), start:s, end:e, showInMonth: showM };
     const i = S.fixed.findIndex(x => x.id === f.id);
     if (i >= 0) S.fixed[i] = next; else S.fixed.push(next);
-    S.activities.forEach(a => { a.scheduledFor = null; a.moved = null; });
     runEngine(); save(); w.remove(); render();
   };
 }
@@ -5090,15 +6099,16 @@ function investNext(x){
 
 function investAlerts(T){
   const out = [];
+  const soglia = (x, campo, tipo, def) => { const g = avvisoOf(x, campo, tipo).giorni; return g.length ? Math.max(...g) : def; };
   for (const x of investOpen()){
     if (x.nextPay){
       const dd = daysBetween(T, x.nextPay);
-      if (dd >= 0 && dd <= 7) out.push({ id:x.id, t:`${x.name}: ${IPAY[x.payType] || "pagamento"} ${dd === 0 ? "oggi" : dd === 1 ? "domani" : `fra ${dd} giorni`}` });
+      if (dd >= 0 && dd <= soglia(x, "avvisoPay", "pagamento", 7)) out.push({ id:x.id, t:`${x.name}: ${IPAY[x.payType] || "pagamento"} ${dd === 0 ? "oggi" : dd === 1 ? "domani" : `fra ${dd} giorni`}` });
       else if (dd < 0) out.push({ id:x.id, t:`${x.name}: ${IPAY[x.payType] || "pagamento"} era il ${prettyDate(x.nextPay)}, da segnare` });
     }
     if (x.maturity){
       const dd = daysBetween(T, x.maturity);
-      if (dd >= 0 && dd <= 30) out.push({ id:x.id, t:`${x.name} scade ${dd === 0 ? "oggi" : `fra ${dd} giorni`}` });
+      if (dd >= 0 && dd <= soglia(x, "avvisoMat", "scadenzaInv", 30)) out.push({ id:x.id, t:`${x.name} scade ${dd === 0 ? "oggi" : `fra ${dd} giorni`}` });
     }
   }
   return out;
@@ -5128,6 +6138,8 @@ function openInvest(id){
                    rate:"", payType:"nessuna", payEvery:12, nextPay:"", maturity:"", note:"",
                    payments:[], closed:null };
   let kind = x.kind, payType = x.payType, payEvery = +x.payEvery || 12;
+  const pPay = avvisoPicker("iv-avp", avvisoOf(x, "avvisoPay", "pagamento"));
+  const pMat = avvisoPicker("iv-avm", avvisoOf(x, "avvisoMat", "scadenzaInv"));
   const w = document.createElement("div");
   w.className = "sheet";
   w.innerHTML = `
@@ -5178,11 +6190,13 @@ function openInvest(id){
         <div class="chips" id="iv-every">${Object.entries(IEVERY).map(([k,l]) => `<button class="chip" data-e="${k}">${l}</button>`).join("")}</div></div>
       <div class="field"><label>Prossimo pagamento</label>
         <input type="date" id="iv-np" value="${x.nextPay || ""}" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)"></div>
+      <div class="field"><label>Avvisami del pagamento</label>${pPay.html}</div>
     </div>
 
     <div class="field"><label>Scadenza (facoltativa)</label>
       <input type="date" id="iv-m" value="${x.maturity || ""}" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)">
-      <div class="hint">Per obbligazioni e conti vincolati: ti avviso un mese prima.</div></div>
+      <div class="hint">Per obbligazioni e conti vincolati.</div></div>
+    <div class="field" id="iv-matbox"><label>Avvisami della scadenza</label>${pMat.html}</div>
 
     <div class="field"><label>Nota</label>
       <input type="text" id="iv-note" value="${esc(x.note || "")}" placeholder="Isin, perché l'hai preso, cosa farne…"></div>
@@ -5203,7 +6217,10 @@ function openInvest(id){
     w.querySelectorAll("#iv-pay .chip").forEach(b => b.classList.toggle("on", b.dataset.p === payType));
     w.querySelectorAll("#iv-every .chip").forEach(b => b.classList.toggle("on", +b.dataset.e === payEvery));
     w.querySelector("#iv-paybox").style.display = payType === "nessuna" ? "none" : "";
+    w.querySelector("#iv-matbox").style.display = w.querySelector("#iv-m").value ? "" : "none";
   }
+  pPay.bind(w); pMat.bind(w);
+  w.querySelector("#iv-m").onchange = () => paintInv();
   w.querySelectorAll("#iv-kind .chip").forEach(b => b.onclick = () => { kind = b.dataset.k; paintInv(); });
   w.querySelectorAll("#iv-pay .chip").forEach(b => b.onclick = () => { payType = b.dataset.p; paintInv(); });
   w.querySelectorAll("#iv-every .chip").forEach(b => b.onclick = () => { payEvery = +b.dataset.e; paintInv(); });
@@ -5238,6 +6255,7 @@ function openInvest(id){
       rate: w.querySelector("#iv-r").value,
       nextPay: payType === "nessuna" ? "" : (w.querySelector("#iv-np").value || ""),
       maturity: w.querySelector("#iv-m").value || "",
+      avvisoPay: pPay.value(), avvisoMat: pMat.value(),
       note: w.querySelector("#iv-note").value.trim() };
     const i = S.invest.findIndex(y => y.id === x.id);
     if (i >= 0) S.invest[i] = next; else S.invest.push(next);
@@ -5287,12 +6305,15 @@ function billNextDate(b){
   return m ? addMonths(b.next, m) : "";
 }
 
+// fino a quanti giorni prima una spesa si fa vedere in cima all'app
+function billSoglia(b){ const g = avvisoOf(b, "avviso", "uscita").giorni; return g.length ? Math.max(...g) : 0; }
+
 function billAlerts(T){
   const out = [];
   for (const b of billsOpen()){
     if (!b.next) continue;
     const dd = daysBetween(T, b.next);
-    const soglia = (b.warn >= 0 ? b.warn : S.billWarn);
+    const soglia = billSoglia(b);
     if (dd < 0) out.push({ id:b.id, t:`${b.name}: ${euro(+b.amount||0)} era il ${prettyDate(b.next)}` });
     else if (dd <= soglia) out.push({ id:b.id, t:`${b.name}: ${euro(+b.amount||0)} ${dd === 0 ? "oggi" : dd === 1 ? "domani" : `fra ${dd} giorni`}` });
   }
@@ -5301,7 +6322,7 @@ function billAlerts(T){
 
 function billRow(b, T){
   const dd = b.next ? daysBetween(T, b.next) : null;
-  const vicino = dd !== null && dd <= (b.warn >= 0 ? b.warn : S.billWarn);
+  const vicino = dd !== null && dd <= billSoglia(b);
   return `
   <button class="actrow" data-bill="${b.id}">
     <div class="imp" style="min-height:38px;background:${b.closed ? "var(--line)" : vicino ? "var(--warn)" : "var(--busy)"}"></div>
@@ -5321,6 +6342,7 @@ function openBill(id){
                : { id:"bl"+Date.now(), name: preNome(), amount:"", every:"m", next: addDays(today(), 7),
                    cat:"Altro", method:"", warn:-1, note:"", closed:null, log:[] };
   let ogni = b.every, cat = b.cat;
+  const pAv = avvisoPicker("bl-av", avvisoOf(b, "avviso", "uscita"));
   const w = document.createElement("div");
   w.className = "sheet";
   w.innerHTML = `
@@ -5352,12 +6374,10 @@ function openBill(id){
     <div class="field"><label>Categoria</label>
       <div class="chips" id="bl-cat">${BCAT.map(c => `<button class="chip" data-c="${c}">${c}</button>`).join("")}</div></div>
 
-    <div class="two">
-      <div class="field"><label>Come la paghi</label>
-        <input type="text" id="bl-m" value="${esc(b.method || "")}" placeholder="Carta, conto, contanti…"></div>
-      <div class="field"><label>Avvisami giorni prima</label>
-        <input type="number" id="bl-w" min="0" max="60" value="${b.warn >= 0 ? b.warn : S.billWarn}"></div>
-    </div>
+    <div class="field"><label>Come la paghi</label>
+      <input type="text" id="bl-m" value="${esc(b.method || "")}" placeholder="Carta, conto, contanti…"></div>
+
+    <div class="field"><label>Avvisami</label>${pAv.html}</div>
 
     <div class="field"><label>Nota</label>
       <input type="text" id="bl-note" value="${esc(b.note || "")}" placeholder="Numero contratto, quando si può disdire…"></div>
@@ -5377,6 +6397,7 @@ function openBill(id){
     w.querySelectorAll("#bl-ogni .chip").forEach(x => x.classList.toggle("on", x.dataset.o === ogni));
     w.querySelectorAll("#bl-cat .chip").forEach(x => x.classList.toggle("on", x.dataset.c === cat));
   }
+  pAv.bind(w);
   w.querySelectorAll("#bl-ogni .chip").forEach(x => x.onclick = () => { ogni = x.dataset.o; paintB(); });
   w.querySelectorAll("#bl-cat .chip").forEach(x => x.onclick = () => { cat = x.dataset.c; paintB(); });
   paintB();
@@ -5406,7 +6427,7 @@ function openBill(id){
     const next = { ...b, name, amount, every: ogni, cat,
       next: w.querySelector("#bl-d").value || "",
       method: w.querySelector("#bl-m").value.trim(),
-      warn: Math.max(0, Math.min(60, +w.querySelector("#bl-w").value || 0)),
+      avviso: pAv.value(),
       note: w.querySelector("#bl-note").value.trim() };
     const i = S.bills.findIndex(x => x.id === b.id);
     if (i >= 0) S.bills[i] = next; else S.bills.push(next);
@@ -5620,6 +6641,101 @@ function openQuick(){
 }
 
 /* ============================================================
+   GLI AVVISI — quando il telefono ti avvisa
+   Per ogni cosa con una data (una cedola, un'uscita, un evento, un obiettivo)
+   scegli quanti giorni prima, anche più di una volta, e a che ora.
+   Se non scegli niente valgono quelli delle impostazioni.
+   ============================================================ */
+const AV_GIORNI = [[0,"Il giorno stesso"],[1,"1 giorno prima"],[2,"2 giorni prima"],[3,"3 giorni prima"],
+                   [7,"1 settimana prima"],[14,"2 settimane prima"],[30,"1 mese prima"]];
+const AV_PRIMA  = [[0,"No"],[15,"15 min"],[30,"30 min"],[60,"1 ora"],[120,"2 ore"]];
+
+function avvisoOf(obj, campo, tipo){
+  const base = { ...AVVISI_DEF[tipo], ...((S.avvisiDef && S.avvisiDef[tipo]) || {}) };
+  const x = obj && obj[campo];
+  const src = x || base;
+  return { giorni: (src.giorni || []).slice(), ora: src.ora || base.ora || "09:00", prima: +(src.prima || 0) };
+}
+
+const giorniPrimaLabel = g => g === 0 ? "il giorno stesso" : g === 1 ? "il giorno prima" : g === 7 ? "una settimana prima"
+  : g === 14 ? "due settimane prima" : g === 30 ? "un mese prima" : `${g} giorni prima`;
+
+function avvisoLabel(av, conPrima){
+  const parti = av.giorni.slice().sort((a,b) => b - a).map(giorniPrimaLabel);
+  let s = parti.length ? `${parti.join(", ")}, alle ${av.ora}` : "";
+  if (conPrima && av.prima) s += (s ? " · " : "") + `${durLabel(av.prima)} prima dell'inizio`;
+  return s || "nessun avviso";
+}
+
+const fraLabel = g => g === 0 ? "oggi" : g === 1 ? "domani" : g === 7 ? "fra una settimana" : g === 30 ? "fra un mese" : `fra ${g} giorni`;
+
+// Il pezzo di modulo per scegliere gli avvisi. Si usa così:
+//   const p = avvisoPicker("id", avviso, { prima:true }); ... p.html ... p.bind(foglio); p.value()
+function avvisoPicker(uid, av, opts){
+  opts = opts || {};
+  const st = { giorni: (av.giorni || []).slice(), ora: av.ora || "09:00", prima: +(av.prima || 0) };
+  const html = `
+    <div id="${uid}">
+      <div class="chips" data-avg></div>
+      <div class="segline" style="margin-top:9px">
+        <input type="number" data-avn min="1" max="365" placeholder="Altro: quanti giorni prima" style="flex:1">
+        <button class="btn" data-avadd style="flex:0 0 auto">Aggiungi</button>
+      </div>
+      <div class="segline" style="margin-top:2px">
+        <span style="flex:1;font-size:13.5px;color:var(--ink-soft)">A che ora</span>
+        <input type="time" data-avora value="${st.ora}" style="flex:0 0 120px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface)">
+      </div>
+      ${opts.prima ? `<div style="font-size:13.5px;color:var(--ink-soft);margin:4px 0 7px">E prima che cominci</div><div class="chips" data-avp></div>` : ""}
+      <div class="hint" data-avh></div>
+    </div>`;
+  let root = null;
+  function paint(){
+    if (!root) return;
+    const box = root.querySelector("[data-avg]");
+    const extra = st.giorni.filter(g => !AV_GIORNI.some(([v]) => v === g));
+    box.innerHTML = AV_GIORNI.map(([v,l]) => `<button class="chip${st.giorni.includes(v) ? " on" : ""}" data-g="${v}">${l}</button>`).join("")
+      + extra.map(g => `<button class="chip on" data-g="${g}">${g} giorni prima &times;</button>`).join("");
+    box.querySelectorAll("[data-g]").forEach(b => b.onclick = () => {
+      const g = +b.dataset.g;
+      st.giorni = st.giorni.includes(g) ? st.giorni.filter(x => x !== g) : [...st.giorni, g];
+      paint();
+    });
+    const pb = root.querySelector("[data-avp]");
+    if (pb){
+      pb.innerHTML = AV_PRIMA.map(([v,l]) => `<button class="chip${st.prima === v ? " on" : ""}" data-p="${v}">${l}</button>`).join("");
+      pb.querySelectorAll("[data-p]").forEach(b => b.onclick = () => { st.prima = +b.dataset.p; paint(); });
+    }
+    root.querySelector("[data-avh]").textContent = "Ti avviso: " + avvisoLabel(st, !!opts.prima) + ".";
+  }
+  return {
+    html,
+    bind(w){
+      root = w.querySelector("#" + uid);
+      root.querySelector("[data-avora]").onchange = e => { st.ora = e.target.value || "09:00"; paint(); };
+      root.querySelector("[data-avadd]").onclick = () => {
+        const inp = root.querySelector("[data-avn]");
+        const g = Math.round(+inp.value);
+        if (g > 0 && !st.giorni.includes(g)) st.giorni.push(g);
+        inp.value = ""; paint();
+      };
+      paint();
+    },
+    value(){ return { giorni: [...new Set(st.giorni)].sort((a,b) => b - a), ora: st.ora, prima: opts.prima ? st.prima : 0 }; }
+  };
+}
+
+// Programma le notifiche di una cosa con una data.
+function schedAvviso(metti, idBase, data, av, titolo, testo, forte, inizioMin){
+  for (const g of av.giorni){
+    metti(`${idBase}-g${g}`, alle(addDays(data, -g), av.ora), titolo, testo(g, false), forte);
+  }
+  if (av.prima && inizioMin !== undefined && inizioMin !== null)
+    metti(`${idBase}-p`, alle(data, "00:00") + (inizioMin - av.prima) * 60000, titolo, testo(0, true), forte);
+}
+
+const cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;
+
+/* ============================================================
    IL TELEFONO — notifiche, sveglie e timer, quando l'app gira
    dentro l'involucro Android. Nel browser questo pezzo dorme.
    ============================================================ */
@@ -5632,25 +6748,34 @@ const alle = (d, hhmm) => {
   return x.getTime();
 };
 
-/* Tutto quello che merita una notifica nei prossimi sette giorni. */
+/* Tutto quello che merita una notifica nel prossimo mese. Si riprogramma
+   ogni volta che l'app si apre o salva qualcosa. */
 function avvisiDaProgrammare(){
   const T = today(), ora = Date.now(), out = [];
+  const limite = ora + 31 * 86400000;
   const metti = (id, quando, titolo, testo, forte) => {
-    if (quando > ora + 60000) out.push({ id, quando, titolo, testo, forte: !!forte });
+    if (quando > ora + 60000 && quando < limite) out.push({ id, quando, titolo, testo, forte: !!forte });
   };
 
-  for (let i = 0; i < 7; i++){
+  for (let i = 0; i < 14; i++){
     const d = addDays(T, i);
+    const acts = planFor(d);
 
     // il riassunto del mattino
     if (S.push.on){
-      const acts = planFor(d).length, rem = remindersOn(d).length;
-      if (acts || rem){
-        const pezzi = [];
-        if (acts) pezzi.push(`${acts} ${acts === 1 ? "attività" : "attività"}`);
-        if (rem) pezzi.push(`${rem} ${rem === 1 ? "promemoria" : "promemoria"}`);
-        metti("giorno-" + d, alle(d, S.push.ora), "La giornata", pezzi.join(" e ") + " da fare oggi.");
-      }
+      const rem = remindersOn(d).length, gct = gcalTodosOn(d).length;
+      const mr = i === 0 ? missedList().length : 0;
+      const pezzi = [];
+      if (acts.length + gct) pezzi.push(`${acts.length + gct} ${acts.length + gct === 1 ? "cosa da fare" : "cose da fare"}`);
+      if (rem) pezzi.push(`${rem} promemoria`);
+      if (mr) pezzi.push(`${mr} da ridecidere`);
+      if (pezzi.length) metti("giorno-" + d, alle(d, S.push.ora), "La giornata", pezzi.join(", ") + ".");
+    }
+
+    // le attività, all'inizio della loro fascia
+    if (S.push.attivita && i < 7) for (const a of acts){
+      if (isDone(d, a.id)) continue;
+      metti(`act-${a.id}-${d}`, alle(d, a.win.start), a.name, `Adesso, fino alle ${a.win.end} · ${durLabel(a.dur)}.`, a.imp === 1);
     }
 
     // la chiusura serale
@@ -5661,41 +6786,11 @@ function avvisiDaProgrammare(){
     if (shopDay(d) && shopLeft())
       metti("spesa-" + d, alle(d, "17:30"), "Spesa", `${shopLeft()} ${shopLeft() === 1 ? "cosa" : "cose"} in lista.`);
 
-    // eventi del giorno, mezz'ora prima
-    for (const o of eventsOn(d)){
-      if (o.allDay) metti("ev-" + o.id + "-" + d, alle(d, "08:30"), o.label, o.place || "Oggi.", true);
-      else metti("ev-" + o.id + "-" + d, alle(d, o.start) - 30*60000, o.label,
-                 `Alle ${o.start}${o.place ? " · " + o.place : ""}.`, true);
-    }
-    // eventi in arrivo, il giorno del preavviso
-    for (const o of eventsSoon(d)){
-      const dd = daysBetween(d, o.date);
-      if (dd === o.warn) metti("evpre-" + o.id, alle(d, "09:00"), o.label,
-        `Fra ${dd} ${dd === 1 ? "giorno" : "giorni"}${o.place ? " · " + o.place : ""}.`);
-    }
-
     // la valigia, la sera prima
     for (const t of S.trips){
-      const dd = daysBetween(d, t.date);
       const restano = t.items.filter(x => !tripDone(t.id, x.id)).length;
-      if (dd === 1 && restano) metti("vg-" + t.id, alle(d, "20:00"), "Valigia · " + t.name,
+      if (daysBetween(d, t.date) === 1 && restano) metti("vg-" + t.id, alle(d, "20:00"), "Valigia · " + t.name,
         `${restano} ${restano === 1 ? "cosa" : "cose"} da mettere: si parte domani.`, true);
-    }
-
-    // uscite in arrivo
-    for (const b of billsOpen()){
-      if (!b.next) continue;
-      const soglia = (b.warn >= 0 ? b.warn : S.billWarn);
-      if (daysBetween(d, b.next) === soglia)
-        metti("bill-" + b.id, alle(d, "09:00"), b.name, `${euro(+b.amount||0)} il ${prettyDate(b.next)}.`);
-    }
-
-    // investimenti: cedole e scadenze
-    for (const x of investOpen()){
-      if (x.nextPay && daysBetween(d, x.nextPay) === 2)
-        metti("inv-" + x.id, alle(d, "09:00"), x.name, "Pagamento fra due giorni.");
-      if (x.maturity && daysBetween(d, x.maturity) === 30)
-        metti("invm-" + x.id, alle(d, "09:00"), x.name, "Scade fra un mese.");
     }
 
     // frigo: quello che scade quel giorno
@@ -5704,7 +6799,64 @@ function avvisiDaProgrammare(){
       `${scad.slice(0,3).join(", ")} ${scad.length === 1 ? "scade" : "scadono"} oggi.`);
   }
 
-  return out.sort((a,b) => a.quando - b.quando).slice(0, 48);
+  // eventi scritti qui
+  for (const o of S.oneoffs){
+    if ((o.endDate || o.date) < T) continue;
+    const av = avvisoOf(o, "avviso", "evento");
+    const quando = o.allDay ? "tutto il giorno" : `alle ${o.start}`;
+    schedAvviso(metti, "ev-" + o.id, o.date, o.allDay ? { ...av, prima:0, giorni: av.giorni.length ? av.giorni : [0] } : av, o.label,
+      (g, prima) => prima ? `Fra ${durLabel(av.prima)}${o.place ? " · " + o.place : ""}.`
+                          : `${g === 0 ? "Oggi" : cap(fraLabel(g))}, ${quando}${o.place ? " · " + o.place : ""}.`,
+      true, o.allDay ? null : toMin(o.start));
+  }
+
+  // eventi di Google a cui hai aggiunto un avviso
+  if (S.gcalOn) for (const g of GCAL.list){
+    const ex = gcxOf(g.key);
+    if (!ex.avviso || g.date < T) continue;
+    const av = avvisoOf(ex, "avviso", "evento");
+    schedAvviso(metti, `gc-${g.key}-${g.date}`, g.date, av, g.label,
+      (n, prima) => prima ? `Fra ${durLabel(av.prima)}${g.place ? " · " + g.place : ""}.`
+                          : `${n === 0 ? "Oggi" : cap(fraLabel(n))}${g.allDay ? "" : `, alle ${g.start}`}${ex.note ? " · " + ex.note : ""}.`,
+      ex.imp === 1, g.allDay ? null : g.s);
+  }
+
+  // uscite in arrivo
+  for (const b of billsOpen()){
+    if (!b.next || b.next < T) continue;
+    schedAvviso(metti, "bill-" + b.id, b.next, avvisoOf(b, "avviso", "uscita"), b.name,
+      g => `${euro(+b.amount || 0)} ${fraLabel(g)}${b.method ? " · " + b.method : ""}.`, false);
+  }
+
+  // investimenti: cedole, dividendi, interessi e scadenze
+  for (const x of investOpen()){
+    if (x.nextPay && x.nextPay >= T)
+      schedAvviso(metti, "inv-" + x.id, x.nextPay, avvisoOf(x, "avvisoPay", "pagamento"), x.name,
+        g => `${IPAY[x.payType] || "Pagamento"} ${fraLabel(g)}.`, true);
+    if (x.maturity && x.maturity >= T)
+      schedAvviso(metti, "invm-" + x.id, x.maturity, avvisoOf(x, "avvisoMat", "scadenzaInv"), x.name,
+        g => `Scade ${fraLabel(g)}.`, true);
+  }
+
+  // obiettivi non ancora fatti
+  for (const g of S.goals){
+    if (goalDone(g)) continue;
+    const fine = goalDue(g);
+    if (!fine || fine < T) continue;
+    schedAvviso(metti, `goal-${g.id}-${fine}`, fine, avvisoOf(g, "avviso", "obiettivo"), g.name,
+      n => n === 0 ? "Ultimo giorno utile." : `Scade ${fraLabel(n)}.`, false);
+  }
+
+  // dare e avere con una scadenza
+  for (const e of ledgerOpen()){
+    if (!e.due || e.due < T) continue;
+    const cosa = e.kind === "soldi" ? euro(ledgerLeft(e)) : e.what;
+    const verso = e.dir === "avere" ? `${e.who} ti deve ${cosa}` : `Devi ${cosa} a ${e.who}`;
+    schedAvviso(metti, "led-" + e.id, e.due, avvisoOf(e, "avviso", "conti"), "Dare e avere",
+      n => `${verso}: scade ${fraLabel(n)}.`, false);
+  }
+
+  return out.sort((a,b) => a.quando - b.quando).slice(0, 150);
 }
 
 let PUSHTIMER = null;
@@ -5755,7 +6907,7 @@ function esportaBackup(){
   w.innerHTML = `
   <div class="sheetin">
     <h3>Backup</h3>
-    <div class="hint" style="margin-bottom:14px">Due strade: scarichi il file, oppure copi il testo e lo incolli dove ti serve. Dentro Claude il telefono non scarica: usa il copia.</div>
+    <div class="hint" style="margin-bottom:14px">Due strade: salvi il file, oppure copi il testo e lo incolli dove ti serve.</div>
     <div class="btnrow" style="margin-top:0">
       <button class="btn primary" id="bk-file" style="flex:1">Scarica il file</button>
       <button class="btn" id="bk-copia" style="flex:1">Copia il testo</button>
@@ -5772,6 +6924,12 @@ function esportaBackup(){
   const stato = w.querySelector("#bk-stato");
   w.querySelector("#bk-chiudi").onclick = () => w.remove();
   w.querySelector("#bk-file").onclick = () => {
+    // nell'app Android il file va nella cartella Download del telefono
+    if (inApp() && typeof NAT.salvaFile === "function"){
+      const r = NAT.salvaFile(b64(dati), "application/json", `coach-${today()}.json`);
+      stato.textContent = r === "ok" ? `Salvato in Download come coach-${today()}.json.` : "Non ci sono riuscito: " + r + ". Usa il copia.";
+      return;
+    }
     try {
       const a = document.createElement("a");
       a.href = URL.createObjectURL(new Blob([dati], { type:"application/json" }));
@@ -5969,7 +7127,7 @@ window.addEventListener("error", e => {
   bar.textContent = "Errore: " + (e.message || e) + " — mandalo a Claude.";
 });
 
-document.querySelectorAll(".navbtn").forEach(b => b.onclick = () => { PROGSUB = null; TAB = b.dataset.tab; render(); });
+document.querySelectorAll(".navbtn").forEach(b => b.onclick = () => { PROGSUB = null; OPTSUB = null; TAB = b.dataset.tab; render(); });
 document.getElementById("fab").onclick = () => openQuick();
 
 // l'ora in testata si aggiorna da sola, senza ridisegnare niente
@@ -5992,11 +7150,17 @@ if ("serviceWorker" in navigator && location.protocol.indexOf("http") === 0){
 
 (async () => {
   await loadState();
+  gcalRead();
   runEngine();
   render();
-  gcalStart();
   riprogrammaAvvisi();
-  if (syncPronto()) sincronizza();
+  if (syncPronto()) sincronizza().then(() => docPrefetch());
+  // il calendario si rilegge ogni dieci minuti mentre l'app è aperta
+  setInterval(() => {
+    if (document.hidden || !S.gcalOn || !gcalSupported()) return;
+    gcalRead(); runEngine();
+    if (!document.querySelector(".sheet") && TAB !== "opzioni") render();
+  }, 10 * 60 * 1000);
 })();
 
 // tornando dentro dopo un po': ricontrolla se un altro dispositivo ha scritto
