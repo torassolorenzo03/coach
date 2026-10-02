@@ -206,7 +206,7 @@ nav{position:fixed;left:0;right:0;bottom:0;background:color-mix(in srgb,var(--bg
 .chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:8px 13px;font-size:13.5px;min-width:46px;text-align:center}
 .chip.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .two{display:flex;gap:10px}
-.two>*{flex:1}
+.two>*{flex:1;min-width:0}
 .hint{font-size:12.5px;color:var(--ink-faint);margin-top:6px;line-height:1.4}
 
 .sheet{position:fixed;inset:0;background:color-mix(in srgb,var(--bg) 70%,transparent);backdrop-filter:blur(6px);
@@ -274,6 +274,49 @@ nav{position:fixed;left:0;right:0;bottom:0;background:color-mix(in srgb,var(--bg
 .segline button.btn{width:auto;height:auto;flex:0 0 auto;padding:11px 15px;font-size:14.5px;line-height:1.2;color:var(--ink)}
 .segline button.btn.primary{color:var(--accent-ink)}
 .totline{font-size:13px;color:var(--ink-soft);margin-top:4px}
+/* ---- layout A: la giornata in ordine di ora ---- */
+.hrow{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.hrow h2{flex:1}
+.hsub{font-size:12.5px;color:var(--ink-soft);white-space:nowrap}
+.vrow{align-items:flex-start}
+.vora{flex:0 0 40px;font-size:12.5px;color:var(--ink-soft);font-variant-numeric:tabular-nums;padding-top:3px}
+.vora.on{color:var(--accent);font-weight:600}
+.vnow{background:color-mix(in srgb,var(--accent) 8%,var(--surface))}
+.vpast{opacity:.55}
+.vmark{flex:0 0 24px;display:flex;justify-content:center;padding-top:2px}
+.vbar{width:6px;height:32px;border-radius:3px;background:var(--busy)}
+.vdot{width:10px;height:10px;border-radius:50%;background:var(--accent);margin-top:4px}
+.vring{font-size:10.5px;font-weight:600;color:var(--accent);border:1.5px solid var(--accent);border-radius:999px;padding:1px 5px;white-space:nowrap}
+.vadesso{font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--accent);padding-top:4px}
+details.vrout>summary{list-style:none;cursor:pointer}
+details.vrout>summary::-webkit-details-marker{display:none}
+details.vrout{border-bottom:1px solid var(--line)}
+details.vrout:last-child{border-bottom:0}
+details.vrout>summary.row{border-bottom:0}
+details.vrout[open]>summary.row{border-bottom:1px solid var(--line)}
+details.vrout .row{padding-left:30px}
+/* ---- adesso e poi ---- */
+.adesso{display:flex;margin-top:4px}
+.adcol{flex:1;padding:13px 14px;min-width:0}
+.adcol+.adcol{border-left:1px solid var(--line)}
+.adlab{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-soft)}
+.adtit{font-size:16.5px;font-weight:600;letter-spacing:-.01em;margin-top:3px;overflow:hidden;text-overflow:ellipsis}
+.adbar{height:5px;border-radius:3px;background:var(--surface-2);margin-top:9px;overflow:hidden}
+.adbar i{display:block;height:100%;background:var(--accent)}
+.riq{margin-top:12px}
+/* ---- la giornata in breve ---- */
+.breve{display:block;width:100%;text-align:left;padding:14px 15px;border-color:var(--accent);font-family:inherit;color:inherit;margin-top:4px}
+.brevetxt{font-size:15px;line-height:1.5;margin-top:6px}
+/* ---- scrivi o detta ---- */
+.qbar{display:flex;gap:8px;align-items:center;background:var(--surface);border:1.5px solid var(--accent);border-radius:16px;padding:5px 5px 5px 14px;position:relative}
+.qbar input{flex:1;min-width:0;border:0;background:transparent;font-size:16px;padding:10px 0;outline:none}
+.qmic{flex:0 0 44px;width:44px;height:44px;border-radius:12px;border:0;background:var(--accent);color:var(--accent-ink);display:flex;align-items:center;justify-content:center;padding:0}
+.qtipo{font-size:11.5px;font-weight:600;color:var(--accent-ink);background:var(--accent);border-radius:999px;padding:3px 10px}
+.qload{padding:10px 14px;font-size:13px;line-height:1.4;background:color-mix(in srgb,var(--accent) 8%,var(--surface));border-top:1px solid var(--line)}
+.qload.warn{background:color-mix(in srgb,var(--warn) 10%,var(--surface));color:var(--warn)}
+.toast{position:fixed;left:50%;bottom:calc(140px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:70;background:var(--ink);color:var(--bg);
+  border-radius:12px;padding:11px 16px;font-size:14px;box-shadow:0 6px 18px rgba(0,0,0,.18);transition:opacity .4s}
+.toast.via{opacity:0}
 </style>
 </head>
 <body>
@@ -291,13 +334,10 @@ nav{position:fixed;left:0;right:0;bottom:0;background:color-mix(in srgb,var(--bg
       Oggi</button>
     <button class="navbtn" data-tab="base">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></svg>
-      Base</button>
-    <button class="navbtn" data-tab="salute">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-5 3 10 2-5h7"/></svg>
-      Salute</button>
-    <button class="navbtn" data-tab="opzioni">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 14.5a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.2a1.6 1.6 0 0 0-1-1.4 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.2a1.6 1.6 0 0 0 1.4-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.2a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.2a1.6 1.6 0 0 0-1.4 1z"/></svg>
-      Impostazioni</button>
+      Archivio</button>
+    <button class="navbtn" data-tab="io">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+      Io</button>
   </div>
 </nav>
 
@@ -460,7 +500,7 @@ let S = null;
 let TAB = "oggi";
 let DB = null;
 const LS_KEY = "coach.state.v1";
-const VERSIONE_APP = 26;
+const VERSIONE_APP = 27;
 
 async function loadState(){
   let local = null;
@@ -577,6 +617,13 @@ function migrate(){
   S.bills.forEach(b => { if (!b.avviso && b.warn >= 0) b.avviso = { giorni:[b.warn], ora:"09:00" }; });
   S.trips.forEach(t => { if (!t.docs) t.docs = []; });
   S.goals.forEach(g => { if (!g.per) g.per = "w"; });
+  // versione 27
+  if (!S.income) S.income = [];
+  S.income.forEach(x => { if (!x.log) x.log = []; if (x.closed === undefined) x.closed = null; });
+  if (!S.layout) S.layout = {};
+  if (!S.breve) S.breve = { ...BREVE_DEF };
+  if (!S.review) S.review = { ...REV_DEF, log:{} };
+  if (!S.review.log) S.review.log = {};
 }
 
 /* Quando arrivano gli avvisi, se non scegli niente di diverso per una voce.
@@ -584,6 +631,7 @@ function migrate(){
    prima: per gli eventi con orario, quanti minuti prima dell'inizio. */
 const AVVISI_DEF = {
   evento:      { giorni:[],     ora:"09:00", prima:30 },
+  entrata:     { giorni:[0],    ora:"18:00" },
   pagamento:   { giorni:[3, 0], ora:"09:00" },
   scadenzaInv: { giorni:[30, 7], ora:"09:00" },
   uscita:      { giorni:[3],    ora:"09:00" },
@@ -1137,11 +1185,13 @@ let LAST_TAB = null;
 function render(){
   const keep = LAST_TAB === TAB;
   const y = keep ? (window.scrollY || 0) : 0;
-  document.querySelectorAll(".navbtn").forEach(b => b.classList.toggle("on", b.dataset.tab === TAB));
   if (TAB === "programma" || TAB === "attivita") TAB = "base";   // i vecchi nomi portano qui
+  if (TAB === "salute") TAB = "io";
+  const scheda = TAB === "opzioni" ? "io" : TAB;
+  document.querySelectorAll(".navbtn").forEach(b => b.classList.toggle("on", b.dataset.tab === scheda));
   if (TAB === "oggi") renderOggi();
   if (TAB === "base") renderBase();
-  if (TAB === "salute") renderSalute();
+  if (TAB === "io") renderIo();
   if (TAB === "opzioni") renderOpzioni();
   LAST_TAB = TAB;
   window.scrollTo(0, y);
@@ -1202,6 +1252,8 @@ function notifiche(){
   }
   if (shopDay(T)) out.push({ k:"spesa", t: shopLeft() ? `Oggi spesa · ${shopLeft()} ${shopLeft() === 1 ? "cosa" : "cose"} in lista` : "Oggi spesa · la lista è vuota" });
   for (const x of billAlerts(T)) out.push({ k:"uscite", t:x.t });
+  for (const x of incomeAlerts(T)) out.push({ k:"entrate", t:x.t });
+  if (revisioneDovuta()) out.push({ k:"revisione", t:"È il momento della revisione della settimana" });
   for (const x of investAlerts(T)) out.push({ k:"investimenti", t:x.t });
   for (const f of fridgeSoon(T)){
     const st = fridgeState(f, T);
@@ -1256,7 +1308,7 @@ function remindersBlock(T){
   const domani = remindersOn(dom);
   const letti = oggi.filter(r => readToday(T, r.id)).length;
   return `
-  <h2 id="h-rem">Promemoria${oggi.length ? ` · ${letti}/${oggi.length} letti` : ""}</h2>
+  <h2 id="h-rem" data-remhead="1">Oggi${oggi.length ? ` · ${letti}/${oggi.length} letti` : ""}</h2>
   <div class="card">
     <div class="pager" id="rempager" style="align-items:flex-start;transition:height .25s">
       ${remPage(oggi, T, "oggi", "Niente da leggere oggi.")}
@@ -1273,25 +1325,287 @@ function remindersBlock(T){
   </div>`;
 }
 
-/* ---------- LA SCHERMATA ---------- */
+/* ---------- LA SCHERMATA ----------
+   Layout A: la segretaria racconta la giornata. In cima la testata, poi
+   i riquadri, che si accendono, si spengono e si mettono in ordine
+   (S.layout.oggi). La pausa e il rientro, quando ci sono, stanno sempre in cima. */
+const OGGI_RIQ = {
+  breve:     { nome:"La giornata in breve", nota:"il racconto della giornata, solo nell'orario del mattino" },
+  adesso:    { nome:"Adesso e poi", nota:"cosa stai facendo e cosa viene dopo" },
+  decidere:  { nome:"Da decidere", nota:"attività rimaste indietro e novità dal calendario" },
+  revisione: { nome:"Revisione della settimana", nota:"compare solo nel giorno che hai scelto" },
+  giornata:  { nome:"La giornata in ordine di ora", nota:"impegni, eventi, routine e attività" },
+  capita:    { nome:"Quando capita", nota:"promemoria, spesa, valigia, scadenze di oggi" },
+  soldi:     { nome:"Soldi della settimana", nota:"cosa esce e cosa entra nei prossimi 7 giorni" },
+  linea:     { nome:"Linea del tempo", nota:"la barra della giornata e i prossimi 30 giorni" }
+};
+const OGGI_SPENTI = ["soldi", "linea"];
+
+// l'ordine e quali sono accesi: quello salvato, più gli eventuali riquadri nuovi in fondo
+function layoutOggi(){
+  const salv = ((S.layout && S.layout.oggi) || []).filter(x => OGGI_RIQ[x.id]);
+  for (const id of Object.keys(OGGI_RIQ))
+    if (!salv.some(x => x.id === id)) salv.push({ id, on: !OGGI_SPENTI.includes(id) });
+  return salv;
+}
+
+function saluto(){
+  const m = nowMin();
+  if (m < 5*60) return "Buonanotte.";
+  if (m < 12*60) return "Buongiorno.";
+  if (m < 18*60) return "Buon pomeriggio.";
+  return "Buonasera.";
+}
+
+/* Tutto quello che ha un orario oggi, in ordine. */
+function vociDelGiorno(T){
+  const out = [];
+  for (const r of S.routines) if (r.items.length)
+    out.push({ k:"routine", s: toMin(r.start), e: fasciaWrap(r) ? 1439 : toMin(r.end), r });
+  for (const f of S.fixed) if (f.days.includes(dow(T)))
+    out.push({ k:"fisso", s: toMin(f.start), e: toMin(f.end), label: f.label, f });
+  for (const o of eventsOn(T)){
+    if (o.allDay) continue;
+    const fine = o.endDate || o.date;
+    out.push({ k:"evento", s: T === o.date ? toMin(o.start) : 0, e: T === fine ? toMin(o.end) : 1439, label: o.label, o });
+  }
+  if (S.gcalOn) for (const g of gcalOnDay(T)){
+    if (g.allDay) continue;
+    const ex = gcxOf(g.key);
+    out.push({ k: ex.todo ? "gctodo" : g.recurring ? "gcfisso" : "gcevento", s: g.s, e: g.e, label: g.label, g });
+  }
+  for (const a of (T === today() ? todaysActs() : actsOn(T)))
+    out.push({ k:"att", s: toMin(a.win.start), e: toMin(a.win.end), label: a.name, a });
+  return out.sort((x,y) => x.s - y.s || x.e - y.e);
+}
+
+// fatta? (solo per quello che si spunta)
+function vocePronta(v, T){
+  if (v.k === "att") return isDone(T, v.a.id);
+  if (v.k === "gctodo") return isDone(T, "gc:" + v.g.key);
+  if (v.k === "routine") return v.r.items.every(i => rDone(T, i.id));
+  return false;
+}
+
+// cosa stai facendo adesso e cosa viene dopo
+function adessoPoi(T){
+  const n = nowMin();
+  const voci = vociDelGiorno(T).filter(v => v.k !== "routine" && !vocePronta(v, T));
+  const ora = voci.filter(v => v.s <= n && n < v.e).sort((a,b) => (a.k === "att") - (b.k === "att"))[0] || null;
+  const poi = voci.find(v => v.s > n && v !== ora) || null;
+  return { ora, poi };
+}
+
+const ICO_TICK = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
+
+function rigaVoce(v, T){
+  const n = nowMin();
+  const adesso = v.s <= n && n < v.e && T === today();
+  const passata = v.e <= n && T === today();
+  const ora = `<div class="vora${adesso ? " on" : ""}">${toHHMM(v.s)}</div>`;
+  const tag = adesso ? `<span class="vadesso">adesso</span>` : "";
+
+  if (v.k === "routine"){
+    const D = fasciaDay(v.r);
+    const fatte = v.r.items.filter(i => rDone(D, i.id)).length;
+    const aperta = currentFascia() === v.r;
+    return `<details class="vrout"${aperta ? " open" : ""}>
+      <summary class="row vrow${adesso ? " vnow" : ""}">
+        ${ora}
+        <div class="vmark"><div class="vring">${fatte}/${v.r.items.length}</div></div>
+        <div class="rbody"><div class="rtitle">Routine · ${esc(v.r.name)}</div>
+          <div class="rmeta" id="rmeta-${v.r.id}">${v.r.start}–${v.r.end}<span class="dot">·</span>${fatte} su ${v.r.items.length}</div></div>
+        ${tag}
+      </summary>
+      ${v.r.items.map(i => routineItemHTML(i, D)).join("")}
+    </details>`;
+  }
+  if (v.k === "att"){
+    const a = v.a, fatta = isDone(T, a.id), da = movedFrom(a, T);
+    return `<div class="row vrow ${fatta ? "done" : ""}${adesso ? " vnow" : ""}" data-row="${a.id}">
+      ${ora}
+      <button class="tick" data-tick="${a.id}" aria-label="Segna fatta: ${esc(a.name)}">${ICO_TICK}</button>
+      <div class="rbody">
+        <div class="rtitle">${esc(a.name)}</div>
+        <div class="rmeta">${a.win.start}–${a.win.end}<span class="dot">·</span>${durLabel(a.dur)}${a.imp === 1 ? `<span class="dot">·</span>importante` : ""}</div>
+        ${timeOn(T, a.id) ? `<span class="flag">${durLabel(timeOn(T, a.id))} registrati oggi</span>` : ""}
+        ${da ? `<span class="flag moved">spostata da ${GG3[dow(da)]} ${prettyDate(da)}</span>` : ""}
+      </div>
+      ${tag}
+      ${fatta ? "" : `<button class="btn ghost" data-do-act="${a.id}" style="min-width:44px;padding:8px 0" aria-label="Fai adesso: ${esc(a.name)}">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>`}
+    </div>`;
+  }
+  if (v.k === "gctodo"){
+    const id = "gc:" + v.g.key, ex = gcxOf(v.g.key);
+    return `<div class="row vrow ${isDone(T, id) ? "done" : ""}${adesso ? " vnow" : ""}" data-row="${id}">
+      ${ora}
+      <button class="tick" data-tick="${id}" aria-label="Segna fatto: ${esc(v.label)}">${ICO_TICK}</button>
+      <div class="rbody"><div class="rtitle">${esc(v.label)}</div>
+        <div class="rmeta">${toHHMM(v.s)}–${toHHMM(v.e)}${ex.note ? `<span class="dot">·</span>${esc(ex.note)}` : ""}<span class="dot">·</span>Google</div></div>
+      ${tag}
+      <button class="btn ghost" data-gc="${v.g.key}" data-gcd="${T}" style="min-width:40px;padding:8px 0" aria-label="Dettagli">&#9881;</button>
+    </div>`;
+  }
+  // impegni ed eventi: si guardano, non si spuntano
+  const fisso = v.k === "fisso" || v.k === "gcfisso";
+  const attr = v.k === "fisso" ? `data-fix="${v.f.id}"` : v.k === "evento" ? `data-one="${v.o.id}"` : `data-gc="${v.g.key}" data-gcd="${T}"`;
+  const luogo = v.o ? v.o.place : v.g ? v.g.inst.place : "";
+  const nota = v.o ? v.o.note : v.g ? gcxOf(v.g.key).note : "";
+  return `<button class="actrow vrow${adesso ? " vnow" : ""}${passata ? " vpast" : ""}" ${attr}>
+    ${ora}
+    <div class="vmark">${fisso ? `<div class="vbar"></div>` : `<div class="vdot"></div>`}</div>
+    <div class="rbody"><div class="rtitle">${esc(v.label)}</div>
+      <div class="rmeta">fino alle ${toHHMM(v.e)}${luogo ? `<span class="dot">·</span>${esc(luogo)}` : ""}${nota ? `<span class="dot">·</span>${esc(nota)}` : ""}${v.g ? `<span class="dot">·</span>Google` : ""}</div></div>
+    ${tag}
+  </button>`;
+}
+
+function giornataHTML(T){
+  const voci = vociDelGiorno(T);
+  const conta = voci.filter(v => v.k === "att" || v.k === "gctodo");
+  const fatte = conta.filter(v => vocePronta(v, T)).length;
+  return `<div class="hrow"><h2 id="h-acts">La giornata, in ordine di ora</h2>${conta.length ? `<span class="hsub" id="h-acts-n">${fatte} su ${conta.length} fatte</span>` : ""}</div>
+  <div class="card">
+    ${voci.length ? voci.map(v => rigaVoce(v, T)).join("")
+      : `<div class="empty">Niente con un orario oggi. Le attività si aggiungono dal + o dall'Archivio.</div>`}
+  </div>`;
+}
+
+/* Quello che oggi c'è ma non ha un orario. */
+function capitaHTML(T){
+  const righe = [];
+  const info = (attr, titolo, meta, colore) => `<button class="actrow" ${attr}>
+      <div class="vmark"><div class="vdot" style="background:${colore || "var(--accent)"}"></div></div>
+      <div class="rbody"><div class="rtitle">${titolo}</div>${meta ? `<div class="rmeta">${meta}</div>` : ""}</div>
+    </button>`;
+  for (const r of remindersOn(T)) righe.push(reminderHTML(r, T));
+  for (const o of eventsOn(T)) if (o.allDay) righe.push(info(`data-one="${o.id}"`, esc(o.label), `tutto il giorno${o.place ? ` · ${esc(o.place)}` : ""}`));
+  if (S.gcalOn) for (const g of gcalOnDay(T)) if (g.allDay) righe.push(info(`data-gc="${g.key}" data-gcd="${T}"`, esc(g.label), "tutto il giorno · Google"));
+  if (shopDay(T)) righe.push(info(`data-prog="spesa"`, "Spesa", shopLeft() ? `${shopLeft()} ${shopLeft() === 1 ? "cosa" : "cose"} in lista` : "la lista è vuota"));
+  for (const t of tripsOn(T)){
+    const fatte = t.items.filter(i => tripDone(t.id, i.id)).length;
+    righe.push(`<details class="vrout"><summary class="row">
+        <div class="vmark"><div class="vring">${fatte}/${t.items.length}</div></div>
+        <div class="rbody"><div class="rtitle" id="h-trip-${t.id}">Valigia · ${esc(t.name)} · ${tripWhenLabel(t, T)} · ${fatte}/${t.items.length}</div>
+          ${(t.docs || []).length ? `<div class="rmeta">${t.docs.length} ${t.docs.length === 1 ? "documento" : "documenti"} con te</div>` : ""}</div>
+      </summary>
+      ${t.items.map(i => `<div class="row ${tripDone(t.id, i.id) ? "done" : ""}" data-row="${i.id}">
+        <button class="tick" data-ttick="${i.id}" data-trip="${t.id}" aria-label="In valigia: ${esc(i.text)}">${ICO_TICK}</button>
+        <div class="rbody"><div class="rtitle">${esc(i.text)}</div></div></div>`).join("")}
+      ${(t.docs || []).length ? docsListHTML(t, false) : ""}
+    </details>`);
+  }
+  for (const g of S.goals){
+    if (goalDone(g)) continue;
+    const l = goalLeft(g);
+    if (l > 3 || l < -30) continue;
+    righe.push(`<div class="row" data-row="${g.id}">
+      <button class="tick" data-gtick="${g.id}" aria-label="Fatto: ${esc(g.name)}">${ICO_TICK}</button>
+      <div class="rbody"><div class="rtitle">${esc(g.name)}</div><div class="rmeta" style="color:var(--warn)">${esc(goalMeta(g))}</div></div></div>`);
+  }
+  for (const x of billAlerts(T)) if (S.bills.find(b => b.id === x.id && b.next <= T)) righe.push(info(`data-bill="${x.id}"`, esc(x.t), "tocca per segnarla pagata", "var(--warn)"));
+  for (const x of incomeAlerts(T)) righe.push(info(`data-inc="${x.id}"`, esc(x.t), "tocca per confermarla", "var(--done)"));
+  for (const f of fridgeSoon(T)){
+    const st = fridgeState(f, T);
+    if (st.k === "scaduto" || st.k === "oggi") righe.push(info(`data-fr="${f.id}"`, esc(f.name), st.label, "var(--warn)"));
+  }
+  for (const e of ledgerOpen()){
+    const al = ledgerAlert(e, T);
+    if (al) righe.push(info(`data-led="${e.id}"`, `${esc(e.who)} · ${e.kind === "soldi" ? euro(ledgerLeft(e)) : esc(e.what)}`, al, "var(--warn)"));
+  }
+  if (!righe.length) return "";
+  const rem = remindersOn(T);
+  return `<div class="hrow"><h2 id="h-rem">Quando capita, oggi</h2>${rem.length ? `<span class="hsub">${rem.filter(r => readToday(T, r.id)).length}/${rem.length} promemoria letti</span>` : ""}</div>
+  <div class="card">${righe.join("")}</div>`;
+}
+
+function adessoHTML(T){
+  if (isPaused()) return "";
+  const { ora, poi } = adessoPoi(T);
+  const n = nowMin();
+  const sub = v => {
+    if (!v) return "";
+    const luogo = v.o ? v.o.place : v.g ? v.g.inst.place : "";
+    return luogo ? ` · ${esc(luogo)}` : "";
+  };
+  const perc = ora ? Math.max(0, Math.min(100, Math.round((n - ora.s) / Math.max(1, ora.e - ora.s) * 100))) : 0;
+  return `<div class="card adesso">
+    <div class="adcol">
+      <div class="adlab">Adesso</div>
+      ${ora ? `<div class="adtit">${esc(ora.label)}</div><div class="rmeta">fino alle ${toHHMM(ora.e)}${sub(ora)}</div>
+        <div class="adbar"><i style="width:${perc}%"></i></div>`
+           : `<div class="adtit">Libero</div><div class="rmeta">${poi ? `fino alle ${toHHMM(poi.s)}` : "per il resto della giornata"}</div>`}
+    </div>
+    <div class="adcol">
+      <div class="adlab">Poi</div>
+      ${poi ? `<div class="adtit">${esc(poi.label)}</div><div class="rmeta">alle ${toHHMM(poi.s)}${sub(poi)}</div>`
+            : `<div class="adtit" style="color:var(--ink-soft)">Niente</div><div class="rmeta">oggi non c'è altro con un orario</div>`}
+    </div>
+  </div>`;
+}
+
+function decidereHTML(T){
+  const a = replanHTML(T), b = gcalNewHTML(T);
+  return a + b;
+}
+
+function soldiSettimanaHTML(T){
+  const fine = addDays(T, 7);
+  let esce = 0, entra = 0;
+  const esceN = [], entraN = [];
+  for (const b of billsOpen()) if (b.next && b.next >= T && b.next <= fine){ esce += +b.amount || 0; esceN.push(b.name); }
+  for (const x of incomeOpen()) if (x.next && x.next <= fine){ entra += +x.amount || 0; entraN.push(x.name); }
+  if (!esce && !entra) return "";
+  return `<h2>Soldi dei prossimi 7 giorni</h2>
+  <div class="card adesso">
+    <button class="adcol" data-prog="uscite" style="text-align:left;background:none;border:0;font-family:inherit;color:inherit">
+      <div class="adlab">Escono</div><div class="adtit" style="color:var(--warn)">${euro(esce)}</div>
+      <div class="rmeta">${esc(esceN.slice(0,3).join(", ")) || "niente"}</div></button>
+    <button class="adcol" data-prog="entrate" style="text-align:left;background:none;border:0;font-family:inherit;color:inherit">
+      <div class="adlab">Entrano</div><div class="adtit" style="color:var(--done)">${euro(entra)}</div>
+      <div class="rmeta">${esc(entraN.slice(0,3).join(", ")) || "niente"}</div></button>
+  </div>`;
+}
+
+function lineaHTML(T){
+  return `<h2>Linea del tempo</h2>
+    <div class="pager" id="pager">
+      <div class="page">${spineHTML(T, todaysActs())}</div>
+      <div class="page">${monthHTML()}</div>
+    </div>
+    <div class="dots"><div class="dot2 on" id="d0"></div><div class="dot2" id="d1"></div></div>
+    <div class="swipehint" id="swipehint">scorri per i prossimi 30 giorni</div>`;
+}
+
 function renderOggi(){
   const T = today();
   const d = fromIso(T);
   const p = progress();
-  const acts = todaysActs();
   const pausa = isPaused();
   const n = notifiche();
   const chiuso = S.closes[T];
+
+  const pezzi = {
+    breve: () => breveCardHTML(T),
+    adesso: () => adessoHTML(T),
+    decidere: () => decidereHTML(T),
+    revisione: () => revisioneCardHTML(T),
+    giornata: () => giornataHTML(T),
+    capita: () => capitaHTML(T),
+    soldi: () => soldiSettimanaHTML(T),
+    linea: () => lineaHTML(T)
+  };
 
   el.innerHTML = `
   <div class="wrap">
     <div class="topbar">
       <button class="tb-main" id="tb-open">
-        <div class="dayname">${GG[d.getDay()]}<span class="dot" style="padding:0 6px">·</span><span class="ora" id="tb-ora">${toHHMM(nowMin())}</span></div>
-        <div class="datebig">${prettyDate(T)}</div>
+        <div class="dayname">${GG[d.getDay()]} ${prettyDate(T)}<span class="dot" style="padding:0 6px">·</span><span class="ora" id="tb-ora">${toHHMM(nowMin())}</span></div>
+        <div class="datebig">${pausa ? "Sei via." : saluto()}</div>
         <div class="tb-note">
           ${n.length ? `<span class="badge">${n.length}</span><span>${NOTIF_OPEN ? "tocca per chiudere" : n.length === 1 ? "una cosa da sapere" : `${n.length} cose da sapere`}</span>`
-                     : `<span>${pausa ? "Sei via. Il coach aspetta." : greeting()}</span>`}
+                     : `<span>${pausa ? "Il coach aspetta che torni." : "Niente di nuovo da sapere."}</span>`}
         </div>
       </button>
       <button class="tb-side${chiuso ? " done" : ""}" id="tb-close">
@@ -1304,39 +1618,490 @@ function renderOggi(){
     </div>
 
     ${notifHTML()}
-
     ${pauseHTML(T)}
-
     ${resumeHTML()}
 
-    ${replanHTML(T)}
+    ${layoutOggi().filter(x => x.on).map(x => `<section class="riq" data-riq="${x.id}">${pezzi[x.id]()}</section>`).join("")}
 
-    ${gcalNewHTML(T)}
-
-    ${remindersBlock(T)}
-
-    <h2>La giornata</h2>
-    <div class="pager" id="pager">
-      <div class="page">${spineHTML(T, acts)}</div>
-      <div class="page">${monthHTML()}</div>
-    </div>
-    <div class="dots"><div class="dot2 on" id="d0"></div><div class="dot2" id="d1"></div></div>
-    <div class="swipehint" id="swipehint">scorri per i prossimi 30 giorni</div>
-
-    ${routineHTML(T)}
-
-    <h2 id="h-acts">Da fare oggi${acts.length ? ` · ${acts.filter(a=>isDone(T,a.id)).length}/${acts.length}` : ""}</h2>
-    <div class="card">
-      ${acts.length ? acts.map(a => rowHTML(a, T)).join("")
-        : `<div class="empty">Niente in programma oggi. Le attività si aggiungono dal + o dalla scheda Base.</div>`}
-    </div>
-
-    ${gcalTodoHTML(T)}
-
-    <div style="text-align:center;font-size:11.5px;color:var(--ink-faint);padding:18px 0 4px">versione ${VERSIONE_APP}</div>
+    <div class="btnrow" style="margin-top:22px"><button class="btn ghost wide" id="riqedit">Modifica i riquadri di Oggi</button></div>
+    <div style="text-align:center;font-size:11.5px;color:var(--ink-faint);padding:14px 0 4px">versione ${VERSIONE_APP}</div>
   </div>`;
 
   bindAll();
+  // al mattino la giornata in breve si apre da sola, una volta al giorno
+  if (breveDaAprire()) setTimeout(() => { if (breveDaAprire()) openBreve(); }, 250);
+}
+
+/* ---------- I RIQUADRI: quali e in che ordine ----------
+   Vale per Oggi e per l'Archivio: si accendono, si spengono, si spostano. */
+function riqLista(chi){
+  if (chi === "oggi") return layoutOggi().map(x => ({ ...x, nome: OGGI_RIQ[x.id].nome, nota: OGGI_RIQ[x.id].nota }));
+  return layoutArchivio().map(x => ({ ...x, nome: ARCH_NOMI[x.id], nota: ARCH_GRUPPI.find(g => g.id === archGruppo(x.id)).nome }));
+}
+
+function riqHTML(chi){
+  const l = riqLista(chi);
+  return `<div class="card">${l.map((x,i) => `
+    <div class="row" style="align-items:center">
+      <div class="rbody" style="${x.on ? "" : "opacity:.5"}"><div class="rtitle">${esc(x.nome)}</div><div class="rmeta">${esc(x.nota)}</div></div>
+      <button class="btn ghost" data-riqsu="${chi}:${i}" style="min-width:40px;padding:8px 0" aria-label="Sposta su: ${esc(x.nome)}"${i === 0 ? " disabled" : ""}>&uarr;</button>
+      <button class="btn ghost" data-riqgiu="${chi}:${i}" style="min-width:40px;padding:8px 0" aria-label="Sposta giù: ${esc(x.nome)}"${i === l.length - 1 ? " disabled" : ""}>&darr;</button>
+      <button class="chip ${x.on ? "on" : ""}" data-riqon="${chi}:${i}" style="flex:0 0 auto">${x.on ? "Sì" : "No"}</button>
+    </div>`).join("")}</div>`;
+}
+
+function riqSalva(chi, lista){
+  S.layout = S.layout || {};
+  S.layout[chi] = lista.map(x => ({ id: x.id, on: !!x.on }));
+  save();
+}
+
+function bindRiq(root, dopo){
+  const muovi = (chiave, delta) => {
+    const [chi, i] = chiave.split(":");
+    const l = chi === "oggi" ? layoutOggi() : layoutArchivio();
+    const j = +i + delta;
+    if (j < 0 || j >= l.length) return;
+    [l[+i], l[j]] = [l[j], l[+i]];
+    riqSalva(chi, l); dopo();
+  };
+  root.querySelectorAll("[data-riqsu]").forEach(b => b.onclick = () => muovi(b.dataset.riqsu, -1));
+  root.querySelectorAll("[data-riqgiu]").forEach(b => b.onclick = () => muovi(b.dataset.riqgiu, 1));
+  root.querySelectorAll("[data-riqon]").forEach(b => b.onclick = () => {
+    const [chi, i] = b.dataset.riqon.split(":");
+    const l = chi === "oggi" ? layoutOggi() : layoutArchivio();
+    l[+i].on = !l[+i].on;
+    riqSalva(chi, l); dopo();
+  });
+}
+
+function openRiquadri(chi){
+  const w = document.createElement("div");
+  w.className = "sheet";
+  const disegna = () => {
+    w.innerHTML = `<div class="sheetin">
+      <h3>${chi === "oggi" ? "I riquadri di Oggi" : "I riquadri dell'Archivio"}</h3>
+      <div class="hint" style="margin-bottom:14px">Accendi quelli che ti servono e mettili nell'ordine che preferisci. ${chi === "oggi" ? "La pausa e il rientro, quando ci sono, restano sempre in cima." : "Le pagine spente restano raggiungibili da qui."}</div>
+      ${riqHTML(chi)}
+      <div class="btnrow"><button class="btn primary wide" id="rq-ok">Fatto</button></div>
+      <div style="height:30px"></div></div>`;
+    bindRiq(w, disegna);
+    w.querySelector("#rq-ok").onclick = () => { w.remove(); render(); };
+  };
+  document.body.appendChild(w);
+  disegna();
+}
+
+/* ============================================================
+   LA GIORNATA IN BREVE — la segretaria ti racconta la giornata
+   Si apre da sola la prima volta che apri l'app nell'orario del mattino
+   (di norma dalle 6 alle 10, si cambia nelle impostazioni). Fuori da
+   quell'orario non si vede. Lo stesso testo arriva nella notifica del mattino.
+   ============================================================ */
+const BREVE_DEF = { on: true, dalle: "06:00", alle: "10:00", apri: true };
+const breveConf = () => ({ ...BREVE_DEF, ...(S.breve || {}) });
+
+function inFinestraBreve(){
+  const b = breveConf();
+  if (!b.on) return false;
+  const n = nowMin(), a = toMin(b.dalle), z = toMin(b.alle);
+  return z > a ? (n >= a && n < z) : (n >= a || n < z);
+}
+const breveDaAprire = () => inFinestraBreve() && breveConf().apri && S.breveVisto !== today() && !isPaused() && !document.querySelector(".sheet");
+
+const minuscola = s => s ? s.charAt(0).toLowerCase() + s.slice(1) : s;
+// "a, b e c"
+const elenco = l => l.length <= 1 ? (l[0] || "") : `${l.slice(0, -1).join(", ")} e ${l[l.length - 1]}`;
+const orario = m => { const h = Math.floor(m / 60), mm = m % 60; return mm ? `${h}:${String(mm).padStart(2, "0")}` : `${h}`; };
+
+/* Le frasi della giornata d. Ogni frase è una cosa sola, detta come la direbbe una persona. */
+function breveFrasi(d){
+  const T = today();
+  const out = [];
+  const voci = vociDelGiorno(d);
+
+  // impegni che occupano la giornata, raggruppati per nome: "Lavoro 8:30–12:30 e 15–19."
+  const fissi = {};
+  for (const v of voci) if (v.k === "fisso" || v.k === "gcfisso")
+    (fissi[v.label] = fissi[v.label] || []).push(`${orario(v.s)}–${orario(v.e)}`);
+  for (const [nome, fasce] of Object.entries(fissi)) out.push(`${nome}: ${elenco(fasce)}.`);
+
+  // eventi con orario, con il luogo e la nota (le cose da portare)
+  const eventi = voci.filter(v => v.k === "evento" || v.k === "gcevento" || v.k === "gctodo");
+  for (const v of eventi){
+    const luogo = v.o ? v.o.place : v.g ? v.g.inst.place : "";
+    const nota = v.o ? v.o.note : v.g ? gcxOf(v.g.key).note : "";
+    out.push(`Alle ${orario(v.s)} ${minuscola(v.label)}${luogo ? `, ${luogo}` : ""}${nota ? `: ${minuscola(nota)}` : ""}.`);
+  }
+  // eventi di tutto il giorno
+  const tutto = eventsOn(d).filter(o => o.allDay).map(o => o.label)
+    .concat(S.gcalOn ? gcalOnDay(d).filter(g => g.allDay).map(g => g.label) : []);
+  if (tutto.length) out.push(`Tutto il giorno: ${elenco(tutto.map(minuscola))}.`);
+
+  // attività
+  const att = voci.filter(v => v.k === "att" && !isDone(d, v.a.id));
+  if (att.length) out.push(`Da fare: ${elenco(att.map(v => `${minuscola(v.label)} (${orario(v.s)})`))}.`);
+
+  // routine con qualcosa dentro
+  const rout = S.routines.filter(r => r.items.length);
+  if (rout.length && d === T){
+    const restano = rout.reduce((n, r) => n + r.items.filter(i => !rDone(d, i.id)).length, 0);
+    if (restano) out.push(`Nelle routine ci sono ${restano} ${restano === 1 ? "cosa" : "cose"} da spuntare.`);
+  }
+
+  // cose rimaste indietro
+  if (d === T){
+    const mr = missedList();
+    if (mr.length) out.push(`Da decidere: ${elenco(mr.map(m => minuscola(m.a.name)))}, ${mr.length === 1 ? "rimasta" : "rimaste"} indietro.`);
+  }
+
+  // soldi del giorno
+  const escono = billsOpen().filter(b => b.next === d);
+  if (escono.length) out.push(`${escono.length === 1 ? "Esce" : "Escono"} ${elenco(escono.map(b => `${b.name} (${euro(+b.amount || 0)})`))}.`);
+  const entrano = incomeOpen().filter(x => x.next === d);
+  if (entrano.length) out.push(`Dovrebbe arrivare ${elenco(entrano.map(x => `${minuscola(x.name)} (${euro(+x.amount || 0)})`))}.`);
+  const paga = investOpen().filter(x => x.nextPay === d);
+  if (paga.length) out.push(`${elenco(paga.map(x => x.name))}: oggi ${paga.length === 1 ? "paga" : "pagano"}.`);
+
+  // promemoria, spesa, obiettivi, frigo
+  const rem = remindersOn(d);
+  if (rem.length) out.push(rem.length === 1 ? `Un promemoria da leggere: ${minuscola(rem[0].text)}.` : `${rem.length} promemoria da leggere.`);
+  if (shopDay(d)) out.push(shopLeft() ? `È il giorno della spesa: ${shopLeft()} ${shopLeft() === 1 ? "cosa" : "cose"} in lista.` : "È il giorno della spesa, ma la lista è vuota.");
+  const ob = S.goals.filter(g => !goalDone(g) && goalDue(g) === d);
+  if (ob.length) out.push(`Ultimo giorno per: ${elenco(ob.map(g => minuscola(g.name)))}.`);
+  const fr = S.fridge.filter(f => f.exp === d).map(f => minuscola(f.name));
+  if (fr.length) out.push(`In frigo ${fr.length === 1 ? "scade" : "scadono"} ${elenco(fr)}.`);
+
+  // la revisione
+  if (revisioneGiorno(d)) out.push(`Stasera alle ${orario(toMin(revConf().ora))} c'è la revisione della settimana.`);
+
+  // uno sguardo a domani
+  const dom = addDays(d, 1);
+  const parte = S.trips.find(t => t.date === dom);
+  if (parte){
+    const mancano = parte.items.filter(i => !tripDone(parte.id, i.id)).length;
+    out.push(`Domani parti per ${parte.name}${mancano ? `: in valigia mancano ${mancano} ${mancano === 1 ? "cosa" : "cose"}` : ""}.`);
+  }
+  const primoDomani = vociDelGiorno(dom).find(v => v.k !== "routine");
+  if (primoDomani) out.push(`Domani si comincia alle ${orario(primoDomani.s)} con ${minuscola(primoDomani.label)}.`);
+
+  if (!out.length) out.push("Giornata libera: niente in programma.");
+  return out;
+}
+
+function breveCardHTML(T){
+  if (!inFinestraBreve()) return "";
+  const f = breveFrasi(T);
+  return `<button class="card breve" id="breve-apri">
+    <div class="adlab" style="color:var(--accent)">La giornata in breve</div>
+    <div class="brevetxt">${esc(f.slice(0, 3).join(" "))}</div>
+    ${f.length > 3 ? `<div class="rmeta" style="margin-top:6px">e altre ${f.length - 3} cose · tocca per leggere tutto</div>` : ""}
+  </button>`;
+}
+
+function openBreve(){
+  const T = today();
+  S.breveVisto = T; salvaSolo();
+  const f = breveFrasi(T);
+  const p = progress();
+  const w = document.createElement("div");
+  w.className = "sheet";
+  w.innerHTML = `<div class="sheetin">
+    <div class="rmeta">${GG[dow(T)]} ${prettyDate(T)}</div>
+    <h3 style="margin-top:4px">${saluto()} Ecco la giornata.</h3>
+    <div class="card" style="padding:6px 0">
+      ${f.map(x => `<div class="row" style="border-bottom:1px solid var(--line)"><div class="rbody"><div style="font-size:16px;line-height:1.5">${esc(x)}</div></div></div>`).join("")}
+    </div>
+    ${p.total ? `<div class="hint" style="margin-top:10px">Per chiudere la giornata al 100% ci sono ${p.total} cose da fare o da leggere.</div>` : ""}
+    <div class="btnrow"><button class="btn primary wide" id="br-ok">Iniziamo</button></div>
+    <div style="height:30px"></div></div>`;
+  document.body.appendChild(w);
+  w.querySelector("#br-ok").onclick = () => w.remove();
+}
+
+/* ============================================================
+   LA REVISIONE DELLA SETTIMANA — cinque minuti, una volta a settimana
+   Di norma la domenica alle 20:00 (si cambia nelle impostazioni).
+   Prima i numeri della settimana, poi come ti sei sentito: stress,
+   svago, soddisfazione e le domande che scegli tu. Poi la settimana
+   che arriva. Le risposte restano e si vedono nel tempo, nella scheda Io.
+   ============================================================ */
+const REV_DOMANDE_DEF = [
+  { id:"stress",  testo:"Livello di stress",                    tipo:"scala", basso:"tranquillo",  alto:"al limite", corto:"stress" },
+  { id:"svago",   testo:"Quanto ti sei svagato",                tipo:"scala", basso:"per niente",  alto:"tantissimo", corto:"svago" },
+  { id:"soddisf", testo:"Quanto sei soddisfatto della settimana", tipo:"scala", basso:"per niente", alto:"del tutto", corto:"soddisfazione" },
+  { id:"energia", testo:"Energia",                              tipo:"scala", basso:"a terra",     alto:"al massimo", corto:"energia" },
+  { id:"bene",    testo:"Cosa è andato bene",                   tipo:"testo" },
+  { id:"meglio",  testo:"Cosa vuoi fare meglio la prossima settimana", tipo:"testo" }
+];
+const REV_DEF = { on: true, giorno: 0, ora: "20:00" };
+
+function revConf(){
+  const r = S.review || {};
+  return { ...REV_DEF, ...r, domande: (r.domande && r.domande.length) ? r.domande : REV_DOMANDE_DEF };
+}
+// il giorno della revisione che riguarda la data d: l'ultimo "giorno scelto" fino a d compreso
+function revGiornoDi(d){
+  const g = revConf().giorno;
+  let x = d;
+  for (let i = 0; i < 7 && dow(x) !== g; i++) x = addDays(x, -1);
+  return x;
+}
+const revisioneGiorno = d => revConf().on && dow(d) === revConf().giorno;
+const revFatta = giorno => !!(S.review && S.review.log && S.review.log[giorno]);
+
+// la revisione aspetta: dall'ora scelta del suo giorno fino alla fine del giorno dopo
+function revisioneDovuta(){
+  const c = revConf();
+  if (!c.on || isPaused()) return null;
+  const T = today();
+  const g = revGiornoDi(T);
+  if (revFatta(g)) return null;
+  if (g === T && nowMin() >= toMin(c.ora)) return g;
+  if (addDays(g, 1) === T) return g;
+  return null;
+}
+
+function revisioneCardHTML(T){
+  const g = revisioneDovuta();
+  if (!g) return "";
+  return `<div class="card breve" style="border-color:var(--accent)">
+    <div class="adlab" style="color:var(--accent)">Revisione della settimana</div>
+    <div class="brevetxt">Cinque minuti per vedere com'è andata, come ti sei sentito e cosa arriva.</div>
+    <div class="btnrow" style="margin-top:10px"><button class="btn primary" id="rev-apri" style="flex:1">Comincia</button></div>
+  </div>`;
+}
+
+// i numeri dei sette giorni che finiscono con "fine"
+function revNumeri(fine){
+  const giorni = [];
+  for (let i = 6; i >= 0; i--) giorni.push(addDays(fine, -i));
+  const chiusi = giorni.map(d => ({ d, c: S.closes[d] }));
+  const conChiusura = chiusi.filter(x => x.c);
+  const media = conChiusura.length ? Math.round(conChiusura.reduce((s,x) => s + x.c.pct, 0) / conChiusura.length) : null;
+  let fatte = 0, saltate = 0;
+  const saltatePer = {};
+  for (const a of S.activities){
+    for (const d of giorni){
+      if (S.pausedDays[d]) continue;
+      if (!occOn(a, d).length) continue;
+      if (isDone(d, a.id)) fatte++;
+      else if (d < today()){ saltate++; saltatePer[a.id] = (saltatePer[a.id] || 0) + 1; }
+    }
+  }
+  const motivi = {};
+  for (const x of conChiusura) for (const id in (x.c.reasons || {})){
+    const r = x.c.reasons[id];
+    if (r !== R_VUOTO) motivi[r] = (motivi[r] || 0) + 1;
+  }
+  const motivo = Object.entries(motivi).sort((a,b) => b[1] - a[1])[0];
+  return { giorni, chiusi, media, fatte, saltate, saltatePer, motivo: motivo ? REASON_LABEL[motivo[0]] : null };
+}
+
+function openRevisione(giorno){
+  const g = giorno || revGiornoDi(today());
+  const c = revConf();
+  const N = revNumeri(g);
+  const prima = (S.review && S.review.log && S.review.log[g]) || { risposte:{} };
+  const risp = { ...(prima.risposte || {}) };
+  const prossimi = [];
+  for (let i = 1; i <= 7; i++) prossimi.push(addDays(g, i));
+  const piene = prossimi.filter(d => dayLoad(d).word === "piena");
+  const leggere = prossimi.filter(d => dayLoad(d).word === "leggera");
+  let esce = 0, entra = 0;
+  for (const b of billsOpen()) if (b.next && b.next > g && b.next <= prossimi[6]) esce += +b.amount || 0;
+  for (const x of incomeOpen()) if (x.next && x.next > g && x.next <= prossimi[6]) entra += +x.amount || 0;
+  const eventi = prossimi.reduce((n,d) => n + eventsOn(d).length + (S.gcalOn ? gcalOnDay(d).filter(x => !x.recurring).length : 0), 0);
+  const indietro = Object.entries(N.saltatePer).map(([id, n]) => ({ a: S.activities.find(x => x.id === id), n })).filter(x => x.a);
+
+  const w = document.createElement("div");
+  w.className = "sheet";
+  w.innerHTML = `<div class="sheetin">
+    <div class="rmeta">${GG[dow(g)]} ${prettyDate(g)} · dal ${prettyDate(N.giorni[0])}</div>
+    <h3 style="margin-top:4px">Com'è andata la settimana</h3>
+
+    <h2 style="margin-top:0">I numeri</h2>
+    <div class="card">
+      <div style="display:flex;align-items:flex-end;gap:7px;height:74px;padding:12px 14px 0">
+        ${N.chiusi.map(x => `<div style="flex:1;height:${x.c ? Math.max(6, x.c.pct) : 4}%;border-radius:5px 5px 0 0;background:${x.c ? (x.c.pct < 50 ? "var(--warn)" : "var(--accent)") : "var(--line)"}" title="${x.c ? x.c.pct + "%" : "non chiusa"}"></div>`).join("")}
+      </div>
+      <div style="display:flex;gap:7px;padding:5px 14px 10px;font-size:11px;color:var(--ink-soft)">${N.giorni.map(d => `<span style="flex:1;text-align:center">${GG3[dow(d)].slice(0,1)}</span>`).join("")}</div>
+      <div class="stat"><span>Media delle giornate chiuse</span><span>${N.media === null ? "—" : N.media + "%"}</span></div>
+      <div class="stat"><span>Attività fatte</span><span>${N.fatte}</span></div>
+      <div class="stat"><span>Attività saltate</span><span>${N.saltate}</span></div>
+      ${N.motivo ? `<div class="stat"><span>Il motivo più frequente</span><span>${esc(N.motivo)}</span></div>` : ""}
+    </div>
+
+    <h2>Come ti sei sentito</h2>
+    <div id="rv-domande">
+      ${c.domande.map(q => q.tipo === "scala" ? `
+        <div class="card" style="padding:13px 14px;margin-bottom:9px">
+          <div class="rtitle">${esc(q.testo)}</div>
+          <div class="chips" style="margin-top:9px" data-scala="${q.id}">
+            ${[1,2,3,4,5].map(v => `<button class="chip${risp[q.id] === v ? " on" : ""}" data-v="${v}" style="flex:1;min-width:0">${v}</button>`).join("")}
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--ink-soft);margin-top:5px"><span>${esc(q.basso || "")}</span><span>${esc(q.alto || "")}</span></div>
+        </div>` : `
+        <div class="field"><label for="rv-${q.id}">${esc(q.testo)}</label>
+          <textarea id="rv-${q.id}" data-testo="${q.id}" rows="2" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);resize:vertical">${esc(risp[q.id] || "")}</textarea></div>`).join("")}
+      <div class="hint">Le domande si cambiano in Impostazioni → Revisione della settimana.</div>
+    </div>
+
+    ${indietro.length ? `<h2>Rimaste indietro</h2>
+    <div class="card">${indietro.map(x => `<button class="actrow" data-rvact="${x.a.id}">
+      <div class="rbody"><div class="rtitle">${esc(x.a.name)}</div>
+        <div class="rmeta">saltata ${x.n} ${x.n === 1 ? "volta" : "volte"} · ${esc(recLabel(x.a.rec, x.a.days))} · tocca per cambiare i giorni</div></div></button>`).join("")}</div>` : ""}
+
+    <h2>La settimana che arriva</h2>
+    <div class="card">
+      <div class="stat"><span>Giornate piene</span><span>${piene.length ? piene.map(d => GG3[dow(d)]).join(", ") : "nessuna"}</span></div>
+      <div class="stat"><span>Giornate leggere</span><span>${leggere.length ? leggere.map(d => GG3[dow(d)]).join(", ") : "nessuna"}</span></div>
+      <div class="stat"><span>Eventi</span><span>${eventi}</span></div>
+      ${esce ? `<div class="stat"><span>Escono</span><span style="color:var(--warn)">${euro(esce)}</span></div>` : ""}
+      ${entra ? `<div class="stat"><span>Dovrebbero entrare</span><span style="color:var(--done)">${euro(entra)}</span></div>` : ""}
+    </div>
+
+    <div class="btnrow"><button class="btn primary wide" id="rv-ok">Fatto, buona settimana</button></div>
+    <div class="btnrow"><button class="btn ghost wide" id="rv-dopo">La faccio dopo</button></div>
+    <div style="height:30px"></div></div>`;
+  document.body.appendChild(w);
+
+  w.querySelectorAll("[data-scala]").forEach(box => box.querySelectorAll("[data-v]").forEach(b => b.onclick = () => {
+    const id = box.dataset.scala, v = +b.dataset.v;
+    risp[id] = risp[id] === v ? undefined : v;
+    if (risp[id] === undefined) delete risp[id];
+    box.querySelectorAll("[data-v]").forEach(x => x.classList.toggle("on", +x.dataset.v === risp[id]));
+  }));
+  w.querySelectorAll("[data-rvact]").forEach(b => b.onclick = () => openForm(b.dataset.rvact));
+  w.querySelector("#rv-dopo").onclick = () => w.remove();
+  w.querySelector("#rv-ok").onclick = () => {
+    w.querySelectorAll("[data-testo]").forEach(t => { const v = t.value.trim(); if (v) risp[t.dataset.testo] = v; else delete risp[t.dataset.testo]; });
+    S.review = S.review || {};
+    S.review.log = S.review.log || {};
+    S.review.log[g] = { at: Date.now(), risposte: risp, media: N.media, fatte: N.fatte, saltate: N.saltate };
+    save(); w.remove(); render();
+  };
+}
+
+/* Nella scheda Io: come vanno le settimane, voce per voce. */
+function settimaneHTML(){
+  const c = revConf();
+  const log = (S.review && S.review.log) || {};
+  const giorni = Object.keys(log).sort().reverse();
+  const dovuta = revisioneDovuta();
+  const ultime = giorni.slice(0, 8).reverse();
+  const scale = c.domande.filter(q => q.tipo === "scala");
+  return `<h2>Le tue settimane</h2>
+  <div class="card">
+    ${dovuta ? `<div class="row"><button class="btn primary wide" id="rev-apri">Fai la revisione di questa settimana</button></div>` : ""}
+    ${giorni.length ? scale.map(q => {
+      const vals = ultime.map(g => (log[g].risposte || {})[q.id]).filter(v => v);
+      const media = vals.length ? (vals.reduce((s,v) => s + v, 0) / vals.length) : null;
+      return `<div class="row" style="align-items:center">
+        <div class="rbody"><div class="rtitle" style="font-size:14.5px">${esc(q.testo)}</div>
+          <div class="rmeta">${media === null ? "ancora nessun voto" : `media ${String(Math.round(media * 10) / 10).replace(".", ",")} su 5 · ultime ${vals.length} settimane`}</div></div>
+        <div style="display:flex;align-items:flex-end;gap:3px;height:30px">
+          ${ultime.map(g => { const v = (log[g].risposte || {})[q.id]; return `<div style="width:7px;height:${v ? v * 20 : 6}%;border-radius:2px;background:${v ? "var(--accent)" : "var(--line)"}"></div>`; }).join("")}
+        </div>
+      </div>`; }).join("")
+    : `<div class="empty">${c.on ? `La prima revisione arriva ${GG[c.giorno].toLowerCase()} alle ${c.ora}. Qui vedrai come cambiano stress, svago e soddisfazione nel tempo.` : "La revisione della settimana è spenta: si accende nelle impostazioni."}</div>`}
+    ${giorni.length ? `<details><summary style="padding:13px 14px;font-size:13.5px;color:var(--ink-soft);cursor:pointer">Le revisioni passate · ${giorni.length}</summary>
+      ${giorni.slice(0, 26).map(g => `<button class="actrow" data-revvedi="${g}"><div class="rbody">
+        <div class="rtitle" style="font-size:14.5px">Settimana fino a ${GG3[dow(g)].toLowerCase()} ${prettyDate(g)}</div>
+        <div class="rmeta">${scale.map(q => { const v = (log[g].risposte || {})[q.id]; return v ? `${q.corto || q.testo.split(" ")[0].toLowerCase()} ${v}` : ""; }).filter(Boolean).join(" · ") || "senza voti"}</div></div></button>`).join("")}
+    </details>` : ""}
+  </div>`;
+}
+
+/* Le impostazioni della revisione: giorno, ora, domande. */
+function revImpostazioniHTML(){
+  const c = revConf();
+  return `
+  <div class="card">
+    <div class="row" style="align-items:center"><div class="rbody"><div class="rtitle">Revisione della settimana</div>
+      <div class="rmeta">${c.on ? "Accesa" : "Spenta"}</div></div>
+      <button class="btn ${c.on ? "primary" : ""}" id="rv-on" style="flex:0 0 auto">${c.on ? "Accesa" : "Spenta"}</button></div>
+    <div class="row" style="display:block"><div class="rtitle" style="margin-bottom:9px">Che giorno</div>
+      <div class="chips">${[1,2,3,4,5,6,0].map(g => `<button class="chip${c.giorno === g ? " on" : ""}" data-rvg="${g}">${GG3[g]}</button>`).join("")}</div></div>
+    <div class="row" style="align-items:center"><div class="rbody"><div class="rtitle">A che ora</div>
+      <div class="rmeta">Da quest'ora compare in Oggi e arriva la notifica. Puoi farla anche il giorno dopo.</div></div>
+      <input type="time" id="rv-ora" value="${c.ora}" style="width:112px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface)"></div>
+  </div>
+
+  <h2>Le domande</h2>
+  <div class="card">
+    ${c.domande.map((q,i) => `<div class="row" style="align-items:center">
+      <div class="rbody"><div class="rtitle" style="font-size:14.5px">${esc(q.testo)}</div>
+        <div class="rmeta">${q.tipo === "scala" ? `da 1 (${esc(q.basso || "poco")}) a 5 (${esc(q.alto || "molto")})` : "risposta scritta"}</div></div>
+      <button class="btn ghost" data-rqsu="${i}" style="min-width:40px;padding:8px 0" aria-label="Sposta su"${i === 0 ? " disabled" : ""}>&uarr;</button>
+      <button class="btn ghost" data-rqx="${i}" style="min-width:40px;padding:8px 0;color:var(--warn)" aria-label="Togli la domanda">&times;</button>
+    </div>`).join("")}
+    <div class="row" style="display:block">
+      <div class="field" style="margin-bottom:9px"><label for="rq-t">Nuova domanda</label>
+        <input type="text" id="rq-t" placeholder="Quanto hai fatto sport, quanto hai letto…"></div>
+      <div class="chips" id="rq-tipo"><button class="chip on" data-t="scala">Voto da 1 a 5</button><button class="chip" data-t="testo">Risposta scritta</button></div>
+      <div class="two" id="rq-estremi" style="margin-top:9px">
+        <input type="text" id="rq-b" placeholder="1 vuol dire… (poco)" style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)">
+        <input type="text" id="rq-a" placeholder="5 vuol dire… (tanto)" style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)">
+      </div>
+      <button class="btn wide" id="rq-add" style="margin-top:10px">Aggiungi la domanda</button>
+    </div>
+  </div>
+  <div class="hint">Le risposte delle settimane passate restano anche se togli una domanda.</div>`;
+}
+
+function bindRevImpostazioni(root){
+  const salva = patch => { S.review = { ...(S.review || {}), ...patch }; save(); render(); };
+  const c = revConf();
+  const on = root.querySelector("#rv-on"); if (on) on.onclick = () => salva({ on: !c.on });
+  root.querySelectorAll("[data-rvg]").forEach(b => b.onclick = () => salva({ giorno: +b.dataset.rvg }));
+  const ora = root.querySelector("#rv-ora"); if (ora) ora.onchange = e => salva({ ora: e.target.value || "20:00" });
+  root.querySelectorAll("[data-rqsu]").forEach(b => b.onclick = () => {
+    const l = c.domande.slice(), i = +b.dataset.rqsu;
+    [l[i-1], l[i]] = [l[i], l[i-1]]; salva({ domande: l });
+  });
+  root.querySelectorAll("[data-rqx]").forEach(b => armDelete(b, "×", () => {
+    const l = c.domande.slice(); l.splice(+b.dataset.rqx, 1); salva({ domande: l.length ? l : [] });
+  }));
+  let tipo = "scala";
+  root.querySelectorAll("#rq-tipo [data-t]").forEach(b => b.onclick = () => {
+    tipo = b.dataset.t;
+    root.querySelectorAll("#rq-tipo [data-t]").forEach(x => x.classList.toggle("on", x === b));
+    root.querySelector("#rq-estremi").style.display = tipo === "scala" ? "" : "none";
+  });
+  const add = root.querySelector("#rq-add");
+  if (add) add.onclick = () => {
+    const t = root.querySelector("#rq-t").value.trim();
+    if (!t){ root.querySelector("#rq-t").focus(); return; }
+    const q = { id: "q" + Date.now(), testo: t, tipo };
+    if (tipo === "scala"){ q.basso = root.querySelector("#rq-b").value.trim() || "poco"; q.alto = root.querySelector("#rq-a").value.trim() || "tanto"; }
+    salva({ domande: c.domande.concat([q]) });
+  };
+}
+
+function openRevisioneVista(g){
+  const log = (S.review && S.review.log && S.review.log[g]);
+  if (!log) return;
+  const c = revConf();
+  const tutte = c.domande.concat(REV_DOMANDE_DEF.filter(q => !c.domande.some(x => x.id === q.id)));
+  const w = document.createElement("div");
+  w.className = "sheet";
+  w.innerHTML = `<div class="sheetin">
+    <h3>Settimana fino a ${GG3[dow(g)].toLowerCase()} ${prettyDate(g)}</h3>
+    <div class="card">
+      ${log.media !== null && log.media !== undefined ? `<div class="stat"><span>Media delle giornate</span><span>${log.media}%</span></div>` : ""}
+      <div class="stat"><span>Attività fatte / saltate</span><span>${log.fatte || 0} / ${log.saltate || 0}</span></div>
+      ${Object.entries(log.risposte || {}).map(([id, v]) => {
+        const q = tutte.find(x => x.id === id);
+        return `<div class="stat" style="${typeof v === "string" ? "display:block" : ""}"><span>${esc(q ? q.testo : id)}</span>${typeof v === "string" ? `<div style="margin-top:4px;color:var(--ink)">${esc(v)}</div>` : `<span>${v} su 5</span>`}</div>`;
+      }).join("")}
+    </div>
+    <div class="btnrow"><button class="btn wide" id="rvv-mod">Modifica</button></div>
+    <div class="btnrow"><button class="btn ghost wide" id="rvv-x">Chiudi</button></div>
+    <div style="height:30px"></div></div>`;
+  document.body.appendChild(w);
+  w.querySelector("#rvv-x").onclick = () => w.remove();
+  w.querySelector("#rvv-mod").onclick = () => { w.remove(); openRevisione(g); };
 }
 
 /* ============================================================
@@ -1360,7 +2125,9 @@ const ICO = {
   invest:   `<path d="M4 18 9 12l3.5 3.5L20 7"/><path d="M15 7h5v5"/>`,
   diario:   `<path d="M5 4.5A2.5 2.5 0 0 1 7.5 2H19v20H7.5A2.5 2.5 0 0 1 5 19.5z"/><path d="M5 17.5h14M9 7h6M9 11h6"/>`,
   vini:     `<path d="M8 3h8l-.6 6a3.4 3.4 0 0 1-6.8 0z"/><path d="M12 12.5V19M9 19h6"/>`,
-  uscite:   `<rect x="2.5" y="5.5" width="19" height="13" rx="2.5"/><path d="M2.5 10h19M6 14.5h4"/>`
+  uscite:   `<rect x="2.5" y="5.5" width="19" height="13" rx="2.5"/><path d="M2.5 10h19M6 14.5h4"/>`,
+  promemoria:`<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>`,
+  entrate:  `<path d="M12 19V5M5 12l7-7 7 7"/>`
 };
 
 /* ogni mattonella dice come sta messa, e si accende quando ha qualcosa da farti fare */
@@ -1415,17 +2182,68 @@ function baseVoci(){
   ];
 }
 
+/* ============================================================
+   ARCHIVIO — tutto quello che c'è, diviso per quando ti serve.
+   Ogni riquadro apre la sua pagina. Quali si vedono e in che ordine
+   lo decidi tu (S.layout.archivio); quelli spenti finiscono in fondo.
+   ============================================================ */
+const ARCH_GRUPPI = [
+  { id:"giorno", nome:"Ogni giorno" },
+  { id:"agenda", nome:"Agenda" },
+  { id:"soldi",  nome:"Soldi" },
+  { id:"te",     nome:"Per te" }
+];
+const ARCH_DI = {
+  attivita:"giorno", routine:"giorno", promemoria:"giorno", spesa:"giorno", frigo:"giorno",
+  eventi:"agenda", impegni:"agenda", viaggi:"agenda", obiettivi:"agenda",
+  uscite:"soldi", entrate:"soldi", conti:"soldi", piggy:"soldi", invest:"soldi",
+  diario:"te", vini:"te"
+};
+const ARCH_NOMI = {
+  attivita:"Attività", routine:"Routine", promemoria:"Promemoria", spesa:"Spesa", frigo:"Frigo",
+  eventi:"Eventi", impegni:"Impegni fissi", viaggi:"Viaggi", obiettivi:"Obiettivi",
+  uscite:"Uscite", entrate:"Entrate", conti:"Dare e avere", piggy:"Salvadanaio", invest:"Investimenti",
+  diario:"Diario", vini:"Vini"
+};
+const archGruppo = id => ARCH_DI[id] || "te";
+
+function layoutArchivio(){
+  const salv = ((S.layout && S.layout.archivio) || []).filter(x => ARCH_NOMI[x.id]);
+  for (const id of Object.keys(ARCH_NOMI)) if (!salv.some(x => x.id === id)) salv.push({ id, on: true });
+  return salv;
+}
+
+function archVoci(){
+  const T = today();
+  const voci = {};
+  for (const v of baseVoci()) voci[v.id] = v;
+  const rem = remindersOn(T);
+  const letti = rem.filter(r => readToday(T, r.id)).length;
+  voci.promemoria = { id:"promemoria", ico:"promemoria", nome:"Promemoria", hot: rem.length > letti,
+    nota: rem.length ? `${letti}/${rem.length} letti oggi` : S.reminders.length ? `${S.reminders.length} in tutto · oggi niente` : "nessuno" };
+  const ia = incomeAlerts(T).length, prev = incomeOpen();
+  voci.entrate = { id:"entrate", ico:"entrate", nome:"Entrate", hot: ia > 0,
+    nota: ia ? `${ia} da confermare` : prev.length ? `${euro(prev.reduce((s,x) => s + (+x.amount || 0), 0))} previste` : "niente segnato" };
+  return voci;
+}
+
 function renderBase(){
   if (PROGSUB) return renderBaseSub();
-  const T = today();
-  const acts = todaysActs();
-  const restano = acts.filter(a => !isDone(T, a.id)).length;
+  const voci = archVoci();
+  const l = layoutArchivio();
+  const tile = v => `
+    <button class="tile${v.hot ? " hot" : ""}" data-prog="${v.id}">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ICO[v.ico]}</svg>
+      <div class="tname">${v.nome}${v.hot ? `<span class="hotdot"></span>` : ""}</div>
+      <div class="tnote">${v.nota}</div>
+    </button>`;
+  const spenti = l.filter(x => !x.on);
   el.innerHTML = `
   <div class="wrap">
     <div class="topbar">
       <div class="tb-main">
-        <div class="datebig">Base</div>
-        <div class="greet">${restano ? `${restano} ${restano === 1 ? "cosa" : "cose"} da fare oggi.` : acts.length ? "Oggi le attività sono tutte fatte." : "Niente in programma oggi."}</div>
+        <div class="datebig">Archivio</div>
+        <div class="greet">Tutto quello che c'è, diviso per quando ti serve.</div>
       </div>
       <button class="cronobtn" id="crono">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="13.5" r="7.5"/><path d="M12 10v3.5l2 1.5M9 2h6M19 6l-1.5 1.5"/></svg>
@@ -1435,22 +2253,62 @@ function renderBase(){
 
     <button class="dobtn" id="doact">Esegui un'attività</button>
 
-    <div class="tiles" style="margin-top:16px">
-      ${baseVoci().map(v => `
-        <button class="tile${v.hot ? " hot" : ""}" data-prog="${v.id}">
-          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ICO[v.ico]}</svg>
-          <div class="tname">${v.nome}${v.hot ? `<span class="hotdot"></span>` : ""}</div>
-          <div class="tnote">${v.nota}</div>
-        </button>`).join("")}
-    </div>
+    ${ARCH_GRUPPI.map(g => {
+      const qui = l.filter(x => x.on && archGruppo(x.id) === g.id);
+      if (!qui.length) return "";
+      return `<h2>${g.nome}</h2><div class="tiles">${qui.map(x => tile(voci[x.id])).join("")}</div>`;
+    }).join("")}
+
+    ${spenti.length ? `<details class="card" style="margin-top:22px">
+      <summary style="padding:13px 14px;font-size:13.5px;color:var(--ink-soft);cursor:pointer">Nascoste · ${spenti.length}</summary>
+      ${spenti.map(x => `<button class="actrow" data-prog="${x.id}"><div class="rbody"><div class="rtitle">${ARCH_NOMI[x.id]}</div><div class="rmeta">${voci[x.id].nota}</div></div></button>`).join("")}
+    </details>` : ""}
+
+    <div class="btnrow" style="margin-top:18px"><button class="btn ghost wide" id="archedit">Modifica i riquadri dell'Archivio</button></div>
     <div style="height:20px"></div>
   </div>`;
   bindAll();
 }
 
+/* ============================================================
+   IO — salute, le settimane, le statistiche, le impostazioni
+   ============================================================ */
+function renderIo(){
+  el.innerHTML = `
+  <div class="wrap">
+    <div class="topbar">
+      <div class="tb-main">
+        <div class="datebig">Io</div>
+        <div class="greet">Come stai, come vanno le settimane, come è fatta l'app.</div>
+      </div>
+      <button class="tb-side" id="io-opz" aria-label="Impostazioni">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 14.5a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.2a1.6 1.6 0 0 0-1-1.4 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.2a1.6 1.6 0 0 0 1.4-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.2a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.2a1.6 1.6 0 0 0-1.4 1z"/></svg>
+        Impostazioni
+      </button>
+    </div>
+
+    ${settimaneHTML()}
+
+    ${saluteHTML()}
+
+    <h2>Statistiche</h2>
+    <div class="card">
+      <button class="actrow" id="stats">
+        <div class="rbody"><div class="rtitle">Come vanno le giornate</div>
+          <div class="rmeta">Medie delle chiusure, perché le cose restano indietro, dove finisce il tempo</div></div>
+      </button>
+    </div>
+    <div style="height:14px"></div>
+  </div>`;
+  bindSalute();
+  bindAll();
+  const o = el.querySelector("#io-opz");
+  if (o) o.onclick = () => { TAB = "opzioni"; OPTSUB = null; render(); };
+}
+
 function baseTitolo(nome, sotto){
   return `<header><div class="h-left">
-    <button class="btn ghost" id="progback" style="padding:6px 12px;font-size:13px;margin-bottom:10px">&larr; Base</button>
+    <button class="btn ghost" id="progback" style="padding:6px 12px;font-size:13px;margin-bottom:10px">&larr; Archivio</button>
     <div class="datebig">${nome}</div>
     <div class="greet">${sotto}</div>
   </div></header>`;
@@ -1468,7 +2326,7 @@ function renderBaseSub(){
     corpo = `
     <button class="dobtn" id="doact" style="margin-bottom:18px">Esegui un'attività</button>
 
-    <h2 id="h-acts">Oggi${acts.length ? ` · ${acts.length - restano}/${acts.length}` : ""}</h2>
+    <h2 id="h-acts" data-vecchio="1">Oggi${acts.length ? ` · ${acts.length - restano}/${acts.length}` : ""}</h2>
     <div class="card">
       ${acts.length ? acts.map(a => doRow(a, T)).join("")
         : `<div class="empty">Niente in programma oggi.</div>`}
@@ -1489,6 +2347,16 @@ function renderBaseSub(){
       : `<div class="empty">Ancora nessuna attività. Pulire casa, fare il bucato, tagliare l'erba: cose che tornano.</div>`}
       <div class="row"><button class="btn ghost wide" id="add">Aggiungi attività</button></div>
     </div>`;
+  }
+
+  else if (v === "promemoria"){
+    nome = "Promemoria"; sotto = "Le cose da leggere. Nei giorni in cui valgono vanno aperte e lette per chiudere la giornata al 100%.";
+    corpo = remindersBlock(T);
+  }
+
+  else if (v === "entrate"){
+    nome = "Entrate"; sotto = "I soldi che arrivano: quelli previsti e quelli confermati. Il giorno previsto ti chiedo se sono arrivati.";
+    corpo = entratePaginaHTML(T);
   }
 
   else if (v === "routine"){
@@ -2050,6 +2918,17 @@ function bindAll(){
   one("addinv", () => openInvest(null));
   one("addwine", () => openWine(null));
   one("addbill", () => openBill(null));
+  one("addinc", () => openIncome(null));
+  one("riqedit", () => openRiquadri("oggi"));
+  one("archedit", () => openRiquadri("archivio"));
+  one("breve-apri", () => openBreve());
+  one("rev-apri", () => openRevisione(revisioneDovuta() || revGiornoDi(today())));
+  el.querySelectorAll("[data-inc]").forEach(b => b.onclick = () => openIncome(b.dataset.inc));
+  el.querySelectorAll("[data-incok]").forEach(b => b.onclick = () => {
+    const x = (S.income || []).find(y => y.id === b.dataset.incok);
+    if (x){ incomeConferma(x.id, +x.amount || 0); render(); toast(`Segnata arrivata: ${x.name}.`); }
+  });
+  el.querySelectorAll("[data-revvedi]").forEach(b => b.onclick = () => openRevisioneVista(b.dataset.revvedi));
   one("crono", () => openCrono());
   one("doact", () => openDo());
   one("shopdone", () => shopFinish());
@@ -2190,7 +3069,7 @@ function toggleGoal(id){
 
 function openGoal(id){
   const T = today();
-  const g = id ? S.goals.find(x => x.id === id) : { id:"g"+Date.now(), name: preNome(), per:"w", due: addDays(T, 14), done:{} };
+  const g = id ? S.goals.find(x => x.id === id) : { id:"g"+Date.now(), name: preNome(), per:"w", due: addDays(T, 14), done:{}, ...prendiBozza("ob") };
   let per = g.per || "w";
   const picker = avvisoPicker("g-av", avvisoOf(g, "avviso", "obiettivo"));
   const w = document.createElement("div");
@@ -2898,7 +3777,7 @@ function openReminder(id, soloVista){
 
 function openReminderEdit(id){
   const r = id ? S.reminders.find(x => x.id === id)
-               : { id:"p"+Date.now(), text: preNome(), body:"", when:{ type:"always", days:[0,1,2,3,4,5,6], date:null } };
+               : { id:"p"+Date.now(), text: preNome(), body:"", when:{ type:"always", days:[0,1,2,3,4,5,6], date:null }, ...prendiBozza("prom") };
   const wn = { type:"always", days:[0,1,2,3,4,5,6], date:null, ...(r.when || {}) };
   if (!wn.days || !wn.days.length) wn.days = [dow(today())];
   if (!wn.date) wn.date = today();
@@ -3401,7 +4280,7 @@ function openFridgeAll(){
 
 function openFridgeItem(id){
   const it = id ? S.fridge.find(x => x.id === id)
-                : { id:"fr"+Date.now(), name:"", exp: addDays(today(), 3), qty:"", note:"" };
+                : { id:"fr"+Date.now(), name: preNome(), exp: addDays(today(), 3), qty:"", note:"", ...prendiBozza("frigo") };
   const w = document.createElement("div");
   w.className = "sheet";
   w.innerHTML = `
@@ -3587,7 +4466,7 @@ function openLedgerItem(id){
   const T = today();
   const e = id ? S.ledger.find(x => x.id === id)
                : { id:"l"+Date.now(), who: preNome(), kind:"soldi", dir:"avere", amount:"", what:"",
-                   date: T, due:"", note:"", moves:[], closed:null, snooze:null };
+                   date: T, due:"", note:"", moves:[], closed:null, snooze:null, ...prendiBozza("conti") };
   let kind = e.kind, dir = e.dir;
   const pAv = avvisoPicker("l-av", avvisoOf(e, "avviso", "conti"));
   const nomi = [...new Set(S.ledger.map(x => x.who).filter(Boolean))].slice(0,8);
@@ -3922,10 +4801,15 @@ function patchToday(){
   if (arc && !isPaused()) arc.setAttribute("d", piePath(p.pct, 19));
   const acts = todaysActs();
   const ha = document.getElementById("h-acts");
-  if (ha) ha.textContent = "Da fare oggi" + (acts.length ? ` · ${acts.filter(a=>isDone(T,a.id)).length}/${acts.length}` : "");
+  if (ha && ha.dataset.vecchio) ha.textContent = "Oggi" + (acts.length ? ` · ${acts.filter(a=>isDone(T,a.id)).length}/${acts.length}` : "");
+  const han = document.getElementById("h-acts-n");
+  if (han){
+    const conta = vociDelGiorno(T).filter(v => v.k === "att" || v.k === "gctodo");
+    han.textContent = `${conta.filter(v => vocePronta(v, T)).length} su ${conta.length} fatte`;
+  }
   const hr = document.getElementById("h-rem");
   const rem = remindersOn(T);
-  if (hr) hr.textContent = "Promemoria" + (rem.length ? ` · ${rem.filter(r=>readToday(T,r.id)).length}/${rem.length} letti` : "");
+  if (hr && hr.dataset.remhead) hr.textContent = "Oggi" + (rem.length ? ` · ${rem.filter(r=>readToday(T,r.id)).length}/${rem.length} letti` : "");
   patchTripHead();
   const hc = document.getElementById("h-gctodo");
   if (hc){ const l = gcalTodosOn(T); hc.textContent = `Dal calendario · ${l.filter(x => isDone(T, x.id)).length}/${l.length}`; }
@@ -3991,7 +4875,7 @@ function routineHTML(T){
   return `<h2 id="h-fascia">Adesso · ${esc(cur.name)} ${cur.start}–${cur.end}${D !== T ? " · di ieri" : ""}${cur.items.length ? ` · ${done}/${cur.items.length}` : ""}</h2>
     <div class="card">
       ${cur.items.length ? cur.items.map(i => routineItemHTML(i, D)).join("")
-        : `<div class="empty">Nessuna routine in questa fascia. Le aggiungi da Base → Routine.</div>`}
+        : `<div class="empty">Nessuna routine in questa fascia. Le aggiungi da Archivio → Routine.</div>`}
     </div>
     ${D !== T ? `<div class="hint" style="padding:0 2px">Sono passate le 00:00: queste spunte contano ancora per la giornata di ieri.</div>` : ""}${restHTML}`;
 }
@@ -4004,6 +4888,14 @@ function toggleRoutine(id){
   save();
   markRow(id, S.rlog[T][id]);
   patchFasciaHead();
+  // la riga della fascia nella giornata di Oggi
+  const meta = document.getElementById("rmeta-" + fascia.id);
+  if (meta){
+    const fatte = fascia.items.filter(i => rDone(T, i.id)).length;
+    meta.innerHTML = `${fascia.start}–${fascia.end}<span class="dot">·</span>${fatte} su ${fascia.items.length}`;
+    const ring = meta.closest("summary") && meta.closest("summary").querySelector(".vring");
+    if (ring) ring.textContent = `${fatte}/${fascia.items.length}`;
+  }
   patchToday();
 }
 
@@ -4801,16 +5693,27 @@ function gcalAsk(){
 
 // il telefono ci racconta cosa è successo: permesso dato, app riaperta
 window.dalTelefono = (cosa, valore) => {
+  // la dettatura è finita: il testo va a chi l'aveva chiesta
+  if (cosa === "dettato"){ const cb = DETTA_CB; DETTA_CB = null; if (cb && valore) cb(valore); return; }
+  if (cosa === "dettato-errore"){ DETTA_CB = null; alert("Su questo telefono la dettatura non c'è: usa il microfono della tastiera."); return; }
+  // dal widget: il tasto + apre l'aggiunta al volo
+  if (cosa === "azione"){
+    if (!S){ window.__azione = valore; return; }
+    if (valore === "aggiungi"){ document.querySelectorAll(".sheet").forEach(x => x.remove()); TAB = "oggi"; render(); openQuick(); }
+    return;
+  }
   if (cosa === "calendario"){
     GCAL.negato = valore !== "si";
     if (valore === "si"){ S.gcalOn = true; salvaSolo(); }
     gcalStart();
   }
-  if (cosa === "ripreso" && S && S.gcalOn && gcalSupported()){
-    // non ridisegno se stai scrivendo in un foglio aperto
-    gcalRead(); runEngine();
-    if (!document.querySelector(".sheet")) render();
-    riprogrammaAvvisi();
+  if (cosa === "ripreso" && S){
+    if (S.gcalOn && gcalSupported()){
+      // non ridisegno se stai scrivendo in un foglio aperto
+      gcalRead(); runEngine();
+      if (!document.querySelector(".sheet")) render();
+    }
+    riprogrammaAvvisi();   // anche il widget si rimette in pari
   }
 };
 
@@ -5098,16 +6001,11 @@ function hRecap(v){
   return `totale 7 giorni: ${vals.reduce((s,x)=>s+x,0)}`;
 }
 
-function renderSalute(){
+// la salute, dentro la scheda Io: voci di oggi, ultimi sette giorni, conteggi
+function saluteHTML(){
   const T = today();
-  el.innerHTML = `
-  <div class="wrap">
-    <header><div class="h-left">
-      <div class="datebig">Salute</div>
-      <div class="greet">Quello che vuoi tenere d'occhio, senza che entri nella percentuale della giornata.</div>
-    </div></header>
-
-    <h2>Oggi</h2>
+  return `
+    <h2>Salute · oggi</h2>
     ${S.health.length ? `<div class="tiles">
       ${S.health.map(v => {
         const x = hVal(T, v.id);
@@ -5124,7 +6022,7 @@ function renderSalute(){
     : `<div class="card"><div class="empty">Nessuna voce. Aggiungine una: orari di sonno, sport, quello che vuoi.</div>
        <div class="row"><button class="btn ghost wide" id="hadd">Aggiungi voce</button></div></div>`}
 
-    <h2>Ultimi 7 giorni</h2>
+    <h2>Salute · ultimi 7 giorni</h2>
     <div class="card">
       ${[6,5,4,3,2,1,0].map(i => {
         const d = addDays(T, -i);
@@ -5141,22 +6039,17 @@ function renderSalute(){
       ${S.trackers.length ? S.trackers.map(t => trackerHTML(t, T)).join("")
         : `<div class="empty">I tuoi conteggi personali: acqua, sigarette, km. Non entrano nella percentuale della giornata.</div>`}
       <div class="row"><button class="btn ghost wide" id="addtr">Aggiungi conteggio</button></div>
-    </div>
+    </div>`;
+}
 
-    <h2>Statistiche</h2>
-    <div class="card">
-      <button class="actrow" id="stats">
-        <div class="rbody"><div class="rtitle">Come vanno le giornate</div>
-          <div class="rmeta">Medie delle chiusure, perché le cose restano indietro, dove finisce il tempo</div></div>
-      </button>
-    </div>
-    <div style="height:14px"></div>
-  </div>`;
-  el.querySelector("#hadd").onclick = () => openHealthEdit(null);
+function bindSalute(){
+  const h = el.querySelector("#hadd"); if (h) h.onclick = () => openHealthEdit(null);
   el.querySelectorAll("[data-hset]").forEach(b => b.onclick = () => openHealthValue(b.dataset.hset));
   el.querySelectorAll("[data-hedit]").forEach(b => b.onclick = e => { e.stopPropagation(); openHealthEdit(b.dataset.hedit); });
-  bindAll();
 }
+
+// il vecchio nome della scheda porta a Io
+function renderSalute(){ TAB = "io"; renderIo(); }
 
 /* segna il valore di oggi */
 function openHealthValue(id){
@@ -5298,17 +6191,22 @@ const AVV_NOMI = {
   scadenzaInv: ["Scadenze degli investimenti", "obbligazioni, conti vincolati"],
   uscita:      ["Uscite", "abbonamenti, bollette, spese fisse"],
   obiettivo:   ["Obiettivi", "la scadenza di un obiettivo non ancora fatto"],
-  conti:       ["Dare e avere", "le voci con una data entro cui restituire"]
+  conti:       ["Dare e avere", "le voci con una data entro cui restituire"],
+  entrata:     ["Entrate", "il giorno in cui dovrebbero arrivare: ti chiedo se sono arrivate"]
 };
 
 function opzVoci(){
   const sm = `sveglia ${S.wake} · ${String(S.sleepH).replace(".", ",")} ore di sonno · chiusura ${S.closeAt}`;
-  const notif = inApp() ? (S.push.on ? `accese · riassunto alle ${S.push.ora}` : "spente") : "arrivano solo nell'app Android";
+  const notif = inApp() ? (S.push.on ? `accese · giornata in breve alle ${S.push.ora}` : "spente") : "arrivano solo nell'app Android";
   const gc = !S.gcalOn ? "spento" : GCAL.status === "ok" ? `acceso · ${Object.keys(GCAL.series).length} cose lette` : GCAL.status === "permesso" ? "manca il permesso" : GCAL.status === "browser" ? "solo nell'app Android" : GCAL.status === "vecchia" ? "serve l'app nuova" : "acceso";
   const pausa = isPaused() ? `in pausa dal ${prettyDate(S.pause.from)}` : "attivo";
   const sync = syncPronto() ? `collegata a ${S.sync.repo}` : "spenta";
+  const b = breveConf(), rc = revConf();
+  const accesi = layoutOggi().filter(x => x.on).length;
   return [
     { id:"giornata", nome:"La giornata", nota: sm },
+    { id:"riquadri", nome:"Riquadri di Oggi e Archivio", nota: `${accesi} riquadri accesi in Oggi · giornata in breve ${b.on ? `${b.dalle}–${b.alle}` : "spenta"}` },
+    { id:"revisione", nome:"Revisione della settimana", nota: rc.on ? `${GG[rc.giorno].toLowerCase()} alle ${rc.ora} · ${rc.domande.length} domande` : "spenta" },
     { id:"notifiche", nome:"Notifiche e avvisi", nota: notif },
     { id:"calendario", nome:"Google Calendar", nota: gc },
     { id:"pausa", nome:"Quando sei via", nota: pausa },
@@ -5359,7 +6257,15 @@ function renderOpzioniSub(){
     ${sm ? `<div class="advice" style="border:1px solid var(--line);border-radius:var(--radius);margin-top:9px">
       Negli ultimi ${sm.n} giorni segnati hai dormito <b>${durLabel(sm.min)}</b> in media.
       <button data-usesleep="${sm.min}">Usa questo dato</button></div>`
-      : `<div class="hint">Segna il sonno nella scheda Salute per qualche giorno e qui ti proporrò la tua media vera.</div>`}
+      : `<div class="hint">Segna il sonno nella scheda Io per qualche giorno e qui ti proporrò la tua media vera.</div>`}
+
+    <h2>La giornata in breve</h2>
+    <div class="card">
+      ${riga("Giornata in breve", "Il racconto della giornata: compare in cima a Oggi solo in questo orario.", sino("op-breve", breveConf().on, "Accesa", "Spenta"))}
+      ${riga("Dalle", "", campoOra("op-brevedalle", breveConf().dalle))}
+      ${riga("Alle", "", campoOra("op-brevealle", breveConf().alle))}
+      ${riga("Si apre da sola", "La prima volta che apri l'app in quell'orario.", sino("op-breveapri", breveConf().apri))}
+    </div>
 
     <h2>Chiusura serale</h2>
     <div class="card">
@@ -5377,9 +6283,10 @@ function renderOpzioniSub(){
     corpo = `
     ${inApp() ? `<div class="card">
       ${riga("Notifiche", S.push.on ? "Accese. Programmo il prossimo mese ogni volta che apri l'app." : "Spente: niente arriva sul telefono.", sino("op-push", S.push.on, "Accese", "Spente"))}
-      ${riga("Il riassunto del mattino", "Cosa c'è da fare oggi, e cosa è da ridecidere.", campoOra("op-pushora", S.push.ora))}
+      ${riga("La giornata in breve", "Ogni mattina a quest'ora: impegni, cose da fare, da decidere e i soldi del giorno.", campoOra("op-pushora", S.push.ora))}
       ${riga("Le attività", "Un avviso all'inizio della loro fascia oraria.", sino("op-pushatt", S.push.attivita))}
       ${riga("La chiusura serale", `Alle ${S.closeAt}, l'ora scelta in La giornata.`, sino("op-pushsera", S.push.sera))}
+      ${riga("La revisione della settimana", `${GG[revConf().giorno]} alle ${revConf().ora}.`, sino("op-pushrev", S.push.revisione !== false))}
       ${riga("Orari esatti", "Senza questo permesso Android può far scivolare le notifiche di qualche minuto.", `<button class="btn" id="op-esatte" style="flex:0 0 auto">Apri</button>`)}
       <div class="row"><button class="btn wide" id="op-prova">Prova una notifica</button></div>
     </div>`
@@ -5397,6 +6304,13 @@ function renderOpzioniSub(){
         </button>`).join("")}
     </div>
     <div class="hint">Ogni voce può avere i suoi avvisi: si scelgono quando la crei o la modifichi. Questi valgono quando non scegli niente.</div>
+
+    <h2>Il widget</h2>
+    <div class="card"><div class="empty" style="color:var(--ink-soft)">
+      ${inApp() && parseFloat(natVersione()) >= 2.2
+        ? "Sulla schermata Home del telefono tieni premuto in uno spazio vuoto, tocca Widget e cerca Coach. Mostra la data, quanto hai fatto, cosa c'è adesso e cosa viene dopo, con il tasto + per aggiungere al volo."
+        : "Il widget per la schermata Home arriva con l'app Android 2.2: installa l'APK nuovo."}
+    </div></div>
 
     <h2>Quando le cose compaiono in Oggi</h2>
     <div class="card">
@@ -5432,8 +6346,8 @@ function renderOpzioniSub(){
 
     <h2>Come li tratta Coach</h2>
     <div class="card"><div class="empty" style="color:var(--ink-soft)">
-      Le cose che si ripetono su Google diventano <b>impegni fissi</b>: occupano il tempo e le trovi in Base → Impegni fissi.
-      Quelle singole sono <b>eventi</b>: le trovi in Base → Eventi e nella giornata.
+      Le cose che si ripetono su Google diventano <b>impegni fissi</b>: occupano il tempo e le trovi in Archivio → Impegni fissi.
+      Quelle singole sono <b>eventi</b>: le trovi in Archivio → Eventi e nella giornata.
       Toccane una per aggiungere quello che Google non ha: importanza, una nota, avvisi, oppure "da spuntare" per farla contare nella giornata.
     </div></div>`;
   }
@@ -5505,6 +6419,17 @@ function renderOpzioniSub(){
     ${THEMES[S.skin].soloScuro ? `<div class="hint">Notte resta scuro comunque: è fatto per quello.</div>` : ""}`;
   }
 
+  else if (v === "riquadri"){
+    corpo = `
+    <div class="hint" style="margin:-6px 0 12px">Accendi quelli che ti servono e mettili nell'ordine che preferisci.</div>
+    <h2 style="margin-top:0">Oggi</h2>${riqHTML("oggi")}
+    <h2>Archivio</h2>${riqHTML("archivio")}`;
+  }
+
+  else if (v === "revisione"){
+    corpo = revImpostazioniHTML();
+  }
+
   else if (v === "zero"){
     corpo = `
     <div class="card">
@@ -5565,6 +6490,14 @@ function bindOpzioni(){
   on("op-pushora", "onchange", e => { S.push.ora = e.target.value || "08:00"; save(); render(); });
   on("op-pushatt", "onclick", () => { S.push.attivita = !S.push.attivita; save(); render(); });
   on("op-pushsera", "onclick", () => { S.push.sera = !S.push.sera; save(); render(); });
+  on("op-pushrev", "onclick", () => { S.push.revisione = S.push.revisione === false; save(); render(); });
+  const breve = patch => { S.breve = { ...breveConf(), ...patch }; save(); render(); };
+  on("op-breve", "onclick", () => breve({ on: !breveConf().on }));
+  on("op-breveapri", "onclick", () => breve({ apri: !breveConf().apri }));
+  on("op-brevedalle", "onchange", e => breve({ dalle: e.target.value || "06:00" }));
+  on("op-brevealle", "onchange", e => breve({ alle: e.target.value || "10:00" }));
+  if (OPTSUB === "riquadri") bindRiq(el, render);
+  if (OPTSUB === "revisione") bindRevImpostazioni(el);
   on("op-prova", "onclick", () => provaNotifica());
   on("op-esatte", "onclick", () => { try { NAT.apriImpostazioniSveglie(); } catch(e){} });
   el.querySelectorAll("[data-avdef]").forEach(b => b.onclick = () => openAvvisoDef(b.dataset.avdef));
@@ -5674,7 +6607,7 @@ function eventsHTML(T){
 function openOneoff(id){
   const o = id ? S.oneoffs.find(x => x.id === id)
                : { id:"o"+Date.now(), label: preNome(), date: today(), endDate: today(), start:"17:00", end:"18:00",
-                   allDay:false, busy:true, warn:0, place:"", note:"" };
+                   allDay:false, busy:true, warn:0, place:"", note:"", ...prendiBozza("evento") };
   const pAv = avvisoPicker("o-av", avvisoOf(o, "avviso", "evento"), { prima: true });
   const w = document.createElement("div");
   w.className = "sheet";
@@ -6471,6 +7404,212 @@ function titoloRiga(t){
 }
 
 /* ============================================================
+   ENTRATE — i soldi che arrivano: previsti e confermati
+   Una voce prevista ha una data in cui dovrebbe arrivare. Quando arriva
+   la confermi (anche con un importo diverso) e passa fra le confermate;
+   se torna ogni mese, la data va avanti da sola. Se il giorno passa e
+   non l'hai confermata, te lo chiedo.
+   ============================================================ */
+const ICAT = ["Stipendio", "Lavoro", "Rimborsi", "Regali", "Investimenti", "Altro"];
+const incomeOpen = () => (S.income || []).filter(x => !x.closed && x.next);
+const incomeLog = () => (S.income || []).flatMap(x => (x.log || []).map(l => ({ ...l, id: x.id, name: x.name })));
+
+function incomeNextDate(x){
+  if (!x.next) return "";
+  if (x.every === "w") return addDays(x.next, 7);
+  const m = OGNI[x.every] ? OGNI[x.every].mesi : 0;
+  return m ? addMonths(x.next, m) : "";
+}
+
+// quelle che sarebbero dovute arrivare e aspettano la tua conferma
+function incomeAlerts(T){
+  return incomeOpen().filter(x => x.next <= T).map(x => {
+    const dd = daysBetween(x.next, T);
+    return { id: x.id, t: `${x.name}: ${euro(+x.amount || 0)} ${dd === 0 ? "dovrebbe arrivare oggi" : `doveva arrivare ${dd === 1 ? "ieri" : `il ${prettyDate(x.next)}`}`}` };
+  });
+}
+
+function incomeMese(T){
+  const m = T.slice(0, 7);
+  const confermate = incomeLog().filter(l => (l.d || "").slice(0, 7) === m);
+  const previste = incomeOpen().filter(x => x.next.slice(0, 7) === m);
+  return {
+    confermate, previste,
+    tot: confermate.reduce((s,l) => s + (+l.amount || 0), 0),
+    attese: previste.reduce((s,x) => s + (+x.amount || 0), 0)
+  };
+}
+
+// segna arrivata: va fra le confermate, e se torna la data va avanti
+function incomeConferma(id, importo, giorno){
+  const x = (S.income || []).find(y => y.id === id); if (!x) return;
+  x.log = x.log || [];
+  x.log.push({ d: giorno || today(), amount: importo >= 0 ? importo : (+x.amount || 0), prevista: x.next || null });
+  const dopo = incomeNextDate(x);
+  if (dopo) x.next = dopo; else { x.closed = { d: today() }; }
+  save();
+}
+
+function incomeRow(x, T){
+  const dd = x.next ? daysBetween(T, x.next) : null;
+  const tardi = dd !== null && dd <= 0;
+  return `<button class="actrow" data-inc="${x.id}">
+    <div class="imp" style="min-height:38px;background:${x.closed ? "var(--line)" : tardi ? "var(--done)" : "var(--busy)"}"></div>
+    <div class="rbody">
+      <div class="rtitle"${x.closed ? ` style="color:var(--ink-faint)"` : ""}>${esc(x.name)} · ${euro(+x.amount || 0)}</div>
+      <div class="rmeta">${OGNI[x.every] ? OGNI[x.every].nome.toLowerCase() : "una tantum"}${x.from ? `<span class="dot">·</span>${esc(x.from)}` : ""}${x.cat ? `<span class="dot">·</span>${esc(x.cat)}` : ""}</div>
+      <div class="rmeta" style="color:${tardi && !x.closed ? "var(--done)" : "var(--ink-faint)"}">
+        ${x.closed ? `chiusa il ${prettyDate(x.closed.d)}`
+          : dd === null ? "senza data"
+          : dd < 0 ? `doveva arrivare il ${prettyDate(x.next)}: è arrivata?`
+          : dd === 0 ? "dovrebbe arrivare oggi"
+          : dd === 1 ? "prevista domani" : `prevista il ${prettyDate(x.next)}`}</div>
+    </div>
+  </button>`;
+}
+
+function entratePaginaHTML(T){
+  const m = incomeMese(T);
+  const daConf = incomeOpen().filter(x => x.next <= T).sort((a,b) => a.next.localeCompare(b.next));
+  const inArrivo = incomeOpen().filter(x => x.next > T).sort((a,b) => a.next.localeCompare(b.next));
+  const chiuse = (S.income || []).filter(x => x.closed);
+  const uscMese = billTotals().mese;
+  return `
+    <div class="card">
+      <div class="stat"><span>Confermate questo mese</span><span style="color:var(--done)">${euro(m.tot)}</span></div>
+      <div class="stat"><span>Ancora previste questo mese</span><span>${euro(m.attese)}</span></div>
+      ${uscMese ? `<div class="stat"><span>Uscite fisse al mese</span><span style="color:var(--warn)">${euro(uscMese)}</span></div>
+      <div class="stat"><span>Ti resta, se arriva tutto</span><span style="font-weight:600">${euro(Math.round((m.tot + m.attese - uscMese) * 100) / 100)}</span></div>` : ""}
+    </div>
+
+    ${daConf.length ? `<h2>Da confermare</h2>
+    <div class="card">${daConf.map(x => `
+      <div class="row" style="flex-direction:column;align-items:stretch;gap:8px">
+        <div class="rbody"><div class="rtitle">${esc(x.name)} · ${euro(+x.amount || 0)}</div>
+          <div class="rmeta">${x.next === T ? "dovrebbe arrivare oggi" : `prevista il ${prettyDate(x.next)}`}${x.from ? ` · ${esc(x.from)}` : ""}</div></div>
+        <div class="why" style="margin-top:0">
+          <button class="on" data-incok="${x.id}">È arrivata</button>
+          <button data-inc="${x.id}">Diversa o non ancora</button>
+        </div>
+      </div>`).join("")}</div>` : ""}
+
+    <h2>${inArrivo.length ? "In arrivo" : "Niente in arrivo"}</h2>
+    <div class="card">
+      ${inArrivo.length ? inArrivo.map(x => incomeRow(x, T)).join("")
+        : `<div class="empty">Segna quello che deve arrivare: lo stipendio, una fattura, un rimborso. Il giorno previsto ti chiedo se è arrivato.</div>`}
+      <div class="row"><button class="btn ghost wide" id="addinc">Aggiungi entrata</button></div>
+    </div>
+
+    <h2>Confermate questo mese</h2>
+    <div class="card">
+      ${m.confermate.length ? m.confermate.sort((a,b) => b.d.localeCompare(a.d)).map(l => `
+        <div class="stat"><span>${prettyDate(l.d)} · ${esc(l.name)}</span><span style="color:var(--done)">+${euro(+l.amount || 0)}</span></div>`).join("")
+        : `<div class="empty">Ancora niente questo mese.</div>`}
+    </div>
+
+    ${chiuse.length ? `<details class="card" style="margin-top:16px">
+      <summary style="padding:13px 14px;font-size:13.5px;color:var(--ink-soft);cursor:pointer">Chiuse · ${chiuse.length}</summary>
+      ${chiuse.map(x => incomeRow(x, T)).join("")}
+    </details>` : ""}`;
+}
+
+function openIncome(id){
+  const T = today();
+  const x = id ? (S.income || []).find(y => y.id === id)
+               : { id:"in" + Date.now(), name: preNome(), amount:"", from:"", cat:"Lavoro", every:"once", next: T,
+                   note:"", log:[], closed:null, ...prendiBozza("entrata") };
+  if (!x) return;
+  let ogni = x.every || "once", cat = x.cat || "Altro", stato = "prevista";
+  const pAv = avvisoPicker("in-av", avvisoOf(x, "avviso", "entrata"));
+  const w = document.createElement("div");
+  w.className = "sheet";
+  w.innerHTML = `<div class="sheetin">
+    <h3>${id ? esc(x.name) : "Nuova entrata"}</h3>
+
+    ${id && !x.closed && x.next ? `<div class="card" style="margin-bottom:16px;padding:13px 14px">
+      <div class="rtitle">${x.next <= T ? "È arrivata?" : `Prevista il ${prettyDate(x.next)}`}</div>
+      <div class="segline" style="margin-top:9px">
+        <input type="number" id="in-arr" step="0.01" value="${x.amount}" aria-label="Quanto è arrivato" style="flex:1;min-width:0;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font-size:16px">
+        <button class="btn primary" id="in-ok">Arrivata</button>
+      </div>
+      <div class="hint">Se è arrivato un importo diverso, correggilo prima di confermare.${x.every !== "once" ? " La prossima data va avanti da sola." : ""}</div>
+      <div class="field" style="margin:12px 0 0"><label for="in-sposta">Non ancora: spostala al</label>
+        <div class="segline"><input type="date" id="in-sposta" value="${addDays(x.next > T ? x.next : T, 3)}" style="flex:1;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)">
+        <button class="btn" id="in-spostaok">Sposta</button></div></div>
+    </div>` : ""}
+
+    ${(x.log || []).length ? `<div class="card" style="margin-bottom:16px">
+      ${x.log.slice().reverse().slice(0, 8).map(l => `<div class="stat"><span>${prettyDate(l.d)}${l.prevista && l.prevista !== l.d ? ` · prevista ${prettyDate(l.prevista)}` : ""}</span><span style="color:var(--done)">+${euro(+l.amount || 0)}</span></div>`).join("")}
+    </div>` : ""}
+
+    <div class="field"><label for="in-n">Cosa</label>
+      <input type="text" id="in-n" value="${esc(x.name)}" placeholder="Stipendio, fattura di settembre, rimborso…"></div>
+    <div class="two">
+      <div class="field"><label for="in-a">Quanto</label>
+        <input type="number" id="in-a" min="0" step="0.01" value="${x.amount}" placeholder="1450"></div>
+      <div class="field"><label for="in-d">Quando dovrebbe arrivare</label>
+        <input type="date" id="in-d" value="${x.next || T}" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)"></div>
+    </div>
+    <div class="field"><label for="in-f">Da chi</label>
+      <input type="text" id="in-f" value="${esc(x.from || "")}" placeholder="Datore di lavoro, cliente, amico…"></div>
+    <div class="field"><label>Ogni quanto</label>
+      <div class="chips" id="in-ogni">${Object.entries(OGNI).map(([k,o]) => `<button class="chip" data-o="${k}">${o.nome}</button>`).join("")}</div></div>
+    <div class="field"><label>Categoria</label>
+      <div class="chips" id="in-cat">${ICAT.map(c => `<button class="chip" data-c="${c}">${c}</button>`).join("")}</div></div>
+    ${!id ? `<div class="field"><label>Adesso è</label>
+      <div class="chips" id="in-stato"><button class="chip" data-s="prevista">Prevista</button><button class="chip" data-s="arrivata">Già arrivata</button></div></div>` : ""}
+    <div class="field"><label>Avvisami</label>${pAv.html}
+      <div class="hint">Il giorno previsto ti chiedo se è arrivata.</div></div>
+    <div class="field"><label for="in-note">Nota</label>
+      <input type="text" id="in-note" value="${esc(x.note || "")}" placeholder="Numero della fattura, banca…"></div>
+
+    <div class="btnrow">
+      <button class="btn primary" id="in-save" style="flex:2">Salva</button>
+      <button class="btn ghost" id="in-cancel">Annulla</button>
+    </div>
+    ${id && !x.closed ? `<div class="btnrow"><button class="btn wide" id="in-close">Non arriverà più</button></div>` : ""}
+    ${id && x.closed ? `<div class="btnrow"><button class="btn wide" id="in-reopen">Riapri</button></div>` : ""}
+    ${id ? `<div class="btnrow"><button class="btn danger wide" id="in-del">Elimina</button></div>` : ""}
+    <div style="height:30px"></div></div>`;
+  document.body.appendChild(w);
+  pAv.bind(w);
+  const paint = () => {
+    w.querySelectorAll("#in-ogni .chip").forEach(b => b.classList.toggle("on", b.dataset.o === ogni));
+    w.querySelectorAll("#in-cat .chip").forEach(b => b.classList.toggle("on", b.dataset.c === cat));
+    w.querySelectorAll("#in-stato .chip").forEach(b => b.classList.toggle("on", b.dataset.s === stato));
+  };
+  w.querySelectorAll("#in-ogni .chip").forEach(b => b.onclick = () => { ogni = b.dataset.o; paint(); });
+  w.querySelectorAll("#in-cat .chip").forEach(b => b.onclick = () => { cat = b.dataset.c; paint(); });
+  w.querySelectorAll("#in-stato .chip").forEach(b => b.onclick = () => { stato = b.dataset.s; paint(); });
+  paint();
+
+  const ok = w.querySelector("#in-ok");
+  if (ok) ok.onclick = () => { incomeConferma(x.id, +w.querySelector("#in-arr").value || 0); w.remove(); render(); };
+  const sp = w.querySelector("#in-spostaok");
+  if (sp) sp.onclick = () => { const d = w.querySelector("#in-sposta").value; if (d){ x.next = d; save(); w.remove(); render(); } };
+  w.querySelector("#in-cancel").onclick = () => w.remove();
+  const cl = w.querySelector("#in-close"); if (cl) cl.onclick = () => { x.closed = { d: T }; save(); w.remove(); render(); };
+  const ro = w.querySelector("#in-reopen"); if (ro) ro.onclick = () => { x.closed = null; if (!x.next) x.next = T; save(); w.remove(); render(); };
+  if (id) armDelete(w.querySelector("#in-del"), "Elimina", () => { S.income = S.income.filter(y => y.id !== id); save(); w.remove(); render(); });
+  w.querySelector("#in-save").onclick = () => {
+    const name = w.querySelector("#in-n").value.trim();
+    const amount = +w.querySelector("#in-a").value || 0;
+    if (!name){ alert("Serve un nome."); return; }
+    if (!(amount > 0)){ alert("Serve l'importo."); return; }
+    const next = { ...x, name, amount, every: ogni, cat,
+      next: w.querySelector("#in-d").value || T,
+      from: w.querySelector("#in-f").value.trim(),
+      note: w.querySelector("#in-note").value.trim(),
+      avviso: pAv.value() };
+    S.income = S.income || [];
+    const i = S.income.findIndex(y => y.id === x.id);
+    if (i >= 0) S.income[i] = next; else S.income.push(next);
+    if (!id && stato === "arrivata") incomeConferma(next.id, amount, next.next <= T ? next.next : T);
+    save(); w.remove(); render();
+  };
+}
+
+/* ============================================================
    USCITE — abbonamenti, spese fisse e uscite straordinarie
    ============================================================ */
 const OGNI = {
@@ -6773,23 +7912,352 @@ function openWine(id){
 }
 
 /* ============================================================
-   IL TASTO + — una cosa, un posto, due tocchi
+   SCRIVI O DETTA — una frase in italiano diventa la cosa giusta
+   "dentista martedì alle 17 in via Roma, portare le lastre" → un evento.
+   "ricordami venerdì di pagare il bollo" → un promemoria.
+   "latte, uova e pane" → la spesa. "Marco mi deve 20 euro" → dare e avere.
+   Capisco quello che posso; il resto lo scegli tu con un tocco.
+   ============================================================ */
+const NUMERI_IT = { un:1, uno:1, una:1, due:2, tre:3, quattro:4, cinque:5, sei:6, sette:7, otto:8, nove:9, dieci:10,
+  undici:11, dodici:12, tredici:13, quattordici:14, quindici:15, venti:20, trenta:30 };
+const GIORNI_IT = { domenica:0, lunedi:1, martedi:2, mercoledi:3, giovedi:4, venerdi:5, sabato:6 };
+const MESI_IT = { gennaio:1, febbraio:2, marzo:3, aprile:4, maggio:5, giugno:6, luglio:7, agosto:8, settembre:9, ottobre:10, novembre:11, dicembre:12 };
+const senzaAccenti = s => s.normalize("NFD").replace(/[̀-ͯ]/g, "");
+const numIt = s => /^\d+$/.test(s) ? +s : (NUMERI_IT[s] || null);
+
+// le bozze che il + passa ai moduli quando scegli "modifica prima di salvare"
+let BOZZA = null;
+function prendiBozza(tipo){
+  if (!BOZZA || BOZZA.tipo !== tipo) return {};
+  const b = BOZZA.campi; BOZZA = null;
+  return b;
+}
+
+function capisciFrase(testo){
+  const T = today();
+  const r = { tipo: null, titolo: "", data: null, ora: null, fine: null, luogo: "", nota: "", importo: null,
+              chi: "", dir: "avere", giorni: [], ogni: null, n: 1, giornoMese: null, entro: null, voci: [] };
+  let t = " " + String(testo || "").normalize("NFC").replace(/\s+/g, " ").trim() + " ";
+  const cerca = re => senzaAccenti(t).match(re);
+  // toglie dal testo il pezzo trovato (stessa posizione: senzaAccenti non cambia le lunghezze)
+  const togli = m => { if (m) t = t.slice(0, m.index) + " " + t.slice(m.index + m[0].length); };
+  if (!t.trim()) return r;
+
+  // soldi: "20 euro", "€ 20", "20€", "1.450,50 €"
+  let m = cerca(/(?:€\s*(\d[\d.]*(?:,\d{1,2})?)|(\d[\d.]*(?:[.,]\d{1,2})?)\s*(?:€|euro\b))/i);
+  if (m){ r.importo = +String(m[1] || m[2]).replace(/\.(?=\d{3}\b)/g, "").replace(",", "."); togli(m); }
+
+  // ripetizioni: "ogni lunedì e giovedì", "ogni giorno", "ogni 3 giorni", "ogni mese il 5", "ogni settimana"
+  m = cerca(/\bogni\s+((?:lunedi|martedi|mercoledi|giovedi|venerdi|sabato|domenica)(?:\s*(?:,|e)\s*(?:lunedi|martedi|mercoledi|giovedi|venerdi|sabato|domenica))*)\b/i);
+  if (m){ r.ogni = "weekly"; r.giorni = m[1].toLowerCase().split(/\s*(?:,|\be\b)\s*/).map(g => GIORNI_IT[g.trim()]).filter(g => g !== undefined); togli(m); }
+  if (!r.ogni && (m = cerca(/\bogni\s+giorno\b|\btutti i giorni\b/i))){ r.ogni = "everyNDays"; r.n = 1; togli(m); }
+  if (!r.ogni && (m = cerca(/\bogni\s+(\d+|due|tre|quattro|cinque|sei|sette|dieci|quindici)\s+giorni\b/i))){ r.ogni = "everyNDays"; r.n = numIt(m[1].toLowerCase()) || 2; togli(m); }
+  if (!r.ogni && (m = cerca(/\bogni\s+(\d+|due|tre|quattro|sei)?\s*mes[ei](?:\s+il\s+(\d{1,2}))?\b/i))){ r.ogni = "monthly"; r.n = m[1] ? numIt(m[1].toLowerCase()) || 1 : 1; r.giornoMese = m[2] ? +m[2] : null; togli(m); }
+  if (!r.ogni && (m = cerca(/\bogni\s+settimana\b|\buna volta a settimana\b/i))){ r.ogni = "weekly"; togli(m); }
+
+  // entro quando: "entro venerdì", "entro il 15 novembre", "entro fine mese", "entro la settimana"
+  if ((m = cerca(/\bentro\s+(?:la\s+)?(fine\s+)?(settimana|mese|anno)\b/i))){ r.entro = { w:"w", s:"w", m:"m", a:"y" }[m[2][0].toLowerCase()] || "w"; if (m[2].toLowerCase() === "settimana") r.entro = "w"; togli(m); }
+  else if ((m = cerca(/\bentro\b/i))){ r.entro = "d"; togli(m); }
+
+  // ore: "dalle 15 alle 17", "alle 17:30", "alle 9 e mezza", "ore 17", "a mezzogiorno"
+  const hm = (h, mm, dopo) => {
+    let H = +h, M = mm ? +mm : 0;
+    if (dopo){ const d = dopo.toLowerCase(); if (/mezza/.test(d)) M = 30; else if (/quarto/.test(d)) M = 15; else if (/\d+/.test(d)) M = +d.match(/\d+/)[0]; }
+    return [H, M];
+  };
+  m = cerca(/\bdalle\s+(\d{1,2})(?:[:.](\d{2}))?(\s+e\s+(?:mezza|un quarto|\d{1,2}))?\s+alle\s+(\d{1,2})(?:[:.](\d{2}))?(\s+e\s+(?:mezza|un quarto|\d{1,2}))?\b/i);
+  if (m){ const [a,b] = hm(m[1], m[2], m[3]), [c,d] = hm(m[4], m[5], m[6]); r.ora = a * 60 + b; r.fine = c * 60 + d; togli(m); }
+  if (r.ora === null && (m = cerca(/\b(?:alle|ore|verso le|per le)\s+(\d{1,2})(?:[:.](\d{2}))?(\s+e\s+(?:mezza|un quarto|\d{1,2}))?\b/i))){ const [a,b] = hm(m[1], m[2], m[3]); r.ora = a * 60 + b; togli(m); }
+  if (r.ora === null && (m = cerca(/\ba\s+mezzogiorno\b|\bmezzogiorno\b/i))){ r.ora = 12 * 60; togli(m); }
+  // "17.30" da solo è un'ora; ma in "Marco mi deve 20.50" sono soldi: lo ricordo e decido dopo
+  let oraNuda = null;
+  if (r.ora === null && (m = cerca(/\b(\d{1,2})[:.](\d{2})\b/))){ r.ora = (+m[1]) * 60 + (+m[2]); oraNuda = m[1] + "." + m[2]; togli(m); }
+  // momenti della giornata: correggono le ore piccole ("alle 5 di pomeriggio" = 17)
+  let momento = null;
+  if ((m = cerca(/\b(?:di|del|nel|in)?\s*(mattina|mattino|pomeriggio|sera|stasera|stamattina|stanotte)\b/i))){ momento = m[1].toLowerCase(); if (!/stasera|stamattina|stanotte/.test(momento)) togli(m); }
+  if (r.ora !== null && r.ora < 12 * 60){
+    const testoBasso = senzaAccenti(t.toLowerCase());
+    // le cose di sera ("cena alle 8" = 20), quelle del mattino restano com'erano ("colazione alle 7")
+    const diSera = /\b(cena|cene|aperitivo|apericena|serata|dopocena|cinema|teatro|concerto)\b/.test(testoBasso);
+    const diMattina = /\b(colazione|sveglia|alba)\b/.test(testoBasso);
+    if (/pomeriggio|sera/.test(momento || "")) r.ora += 12 * 60;
+    else if (!momento && !diMattina && r.ora >= 60 && (r.ora < 8 * 60 || diSera)) r.ora += 12 * 60;
+  }
+  if (r.fine !== null && r.ora !== null && r.fine <= r.ora && r.fine < 12 * 60) r.fine += 12 * 60;
+  if (r.ora !== null && (r.ora < 0 || r.ora >= 24 * 60)) r.ora = null;
+
+  // giorni: oggi, stasera, domani, dopodomani, lunedì…, il 15, 15 ottobre, 15/10, fra 3 giorni
+  if ((m = cerca(/\b(oggi|stasera|stamattina|stanotte)\b/i))){ r.data = T; if (/stasera/i.test(m[1]) && r.ora === null) r.ora = 20 * 60; togli(m); }
+  else if ((m = cerca(/\bdopodomani\b/i))){ r.data = addDays(T, 2); togli(m); }
+  else if ((m = cerca(/\bdomani\b/i))){ r.data = addDays(T, 1); togli(m); }
+  else if ((m = cerca(/\b(?:fra|tra)\s+(\d+|un|una|due|tre|quattro|cinque|sei|sette|dieci|quindici)\s+(giorni|giorno|settimane|settimana|mesi|mese)\b/i))){
+    const q = numIt(m[1].toLowerCase()) || 1, u = m[2].toLowerCase();
+    r.data = u.startsWith("giorn") ? addDays(T, q) : u.startsWith("settiman") ? addDays(T, 7 * q) : addMonths(T, q); togli(m);
+  }
+  else if ((m = cerca(/\bfine\s+mese\b/i))){ const d = fromIso(T); r.data = iso(new Date(d.getFullYear(), d.getMonth() + 1, 0)); togli(m); }
+  else if ((m = cerca(/\b(?:il\s+)?(\d{1,2})\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)(?:\s+(\d{4}))?\b/i))){
+    const g = +m[1], me = MESI_IT[m[2].toLowerCase()];
+    let y = m[3] ? +m[3] : +T.slice(0, 4);
+    let d = `${y}-${String(me).padStart(2, "0")}-${String(g).padStart(2, "0")}`;
+    if (!m[3] && d < T) d = `${y + 1}${d.slice(4)}`;
+    r.data = d; togli(m);
+  }
+  else if ((m = cerca(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/))){
+    let y = m[3] ? (+m[3] < 100 ? 2000 + +m[3] : +m[3]) : +T.slice(0, 4);
+    let d = `${y}-${String(+m[2]).padStart(2, "0")}-${String(+m[1]).padStart(2, "0")}`;
+    if (!m[3] && d < T) d = `${y + 1}${d.slice(4)}`;
+    r.data = d; togli(m);
+  }
+  else if ((m = cerca(/\b(lunedi|martedi|mercoledi|giovedi|venerdi|sabato|domenica)(\s+prossim[oa])?\b/i))){
+    const g = GIORNI_IT[m[1].toLowerCase()];
+    let d = addDays(T, 1);
+    while (dow(d) !== g) d = addDays(d, 1);
+    r.data = d; togli(m);
+    if (!r.ogni && r.giorni.length === 0) r.giorni = [g];
+  }
+  else if ((m = cerca(/\b(?:il|l')\s*(\d{1,2})\b/i))){
+    const g = +m[1];
+    if (g >= 1 && g <= 31){
+      r.data = prossimoGiornoMese(g, T); togli(m);
+      if (r.ogni === "monthly" && !r.giornoMese) r.giornoMese = g;
+    }
+  }
+
+  // il posto: "in via Roma 12", "a piazza Castello", "presso lo studio"
+  if ((m = cerca(/\b(?:in|a|al|alla)\s+((?:via|viale|piazza|piazzale|corso|largo|vicolo|strada)\s+[^,;]+?)(?=\s+(?:alle|ore|il|dalle|domani|oggi|per|con)\b|[,;]|\s*$)/i))){ r.luogo = m[1].trim().replace(/^./, c => c.toUpperCase()); togli(m); }
+  else if ((m = cerca(/\bpresso\s+([^,;]+?)(?=\s+(?:alle|ore|il|dalle|domani|oggi)\b|[,;]|\s*$)/i))){ r.luogo = m[1].trim(); togli(m); }
+
+  // che cos'è
+  let resto = t.replace(/\s+/g, " ").trim();
+  const low = senzaAccenti(resto.toLowerCase());
+  // un pezzo di "low" riportato sul testo originale (stessa lunghezza, ma con gli accenti e le maiuscole)
+  const pezzo = s => { if (!s) return ""; const i = low.indexOf(s); return i < 0 ? s : resto.slice(i, i + s.length); };
+  // un numero da solo, senza "euro": in "stipendio 1450 il 27" o "Marco mi deve 20" è l'importo
+  const NUDO = /(?:^|\s)(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d{1,2}))?(?=\s|$)/;
+  const soloNumero = s => /^\s*(\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?\s*$/.test(s || "");
+  let mm;
+  if ((mm = low.match(/^(.+?)\s+mi\s+deve\s*(.*)$/))){
+    r.tipo = "conti"; r.dir = "avere"; r.chi = pezzo(mm[1]).trim(); r.titolo = resto.slice(resto.length - mm[2].length).trim();
+  } else if ((mm = low.match(/^devo\s+(?:(dare|ridare|restituire|rendere)\s+)?(?:(.*?)\s+)?(?:(?:a|ad|al|alla|allo|ai|agli|alle)\s+|all')([^\s]+(?:\s+[^\s]+)?)$/))
+             && (mm[1] || r.importo || soloNumero(mm[2]) || /\bsoldi\b/.test(mm[2] || ""))){
+    // "devo 20 euro a Marco", "devo restituire il libro a Luca"; non "devo andare a Milano"
+    r.tipo = "conti"; r.dir = "dare"; r.chi = resto.slice(resto.length - mm[3].length).trim(); r.titolo = pezzo(mm[2]).trim();
+  } else if ((mm = low.match(/^ho\s+prestato\s+(.*?)\s+a\s+(.+)$/))){
+    r.tipo = "conti"; r.dir = "avere"; r.chi = resto.slice(resto.length - mm[2].length).trim(); r.titolo = pezzo(mm[1]);
+  } else if ((mm = low.match(/^(.+?)\s+mi\s+ha\s+prestato\s*(.*)$/))){
+    r.tipo = "conti"; r.dir = "dare"; r.chi = pezzo(mm[1]).trim(); r.titolo = pezzo(mm[2]);
+  } else if ((mm = low.match(/^(.+?)\s+scad(?:e|ono|ra)\b\s*(.*)$/)) && !/^(il|la|lo)?\s*(bollo|assicurazione|affitto|abbonamento|fattura)/.test(low)){
+    r.tipo = "frigo"; r.titolo = resto.slice(0, mm[1].length).trim();
+  } else if (/\b(stipendio|pensione|tredicesima|quattordicesima|mi pagano|mi paga|mi arriva|mi arrivano|incasso|entrata|rimborso|fattura da incassare|bonifico in arrivo)\b/.test(low)
+             && (r.importo || NUDO.test(low) || /stipendio|pensione|tredicesima|quattordicesima/.test(low))){
+    r.tipo = "entrata"; r.titolo = resto.replace(/\b(mi pagano|mi paga|mi arriva|mi arrivano|incasso)\b/ig, "").trim();
+    // stipendio e pensione tornano ogni mese, se non dici altrimenti
+    if (!r.ogni && /stipendio|pensione/.test(low)) r.ogni = "monthly";
+  } else if ((mm = low.match(/^(?:ricordami|ricorda(?:mi)?|promemoria|non dimenticare|devo ricordarmi)\s*:?\s*(?:di\s+|che\s+)?(.*)$/))){
+    r.tipo = "prom"; r.titolo = resto.slice(resto.length - mm[1].length).trim();
+  } else if (r.ogni){
+    r.tipo = "att"; r.titolo = resto;
+  } else if (r.entro){
+    r.tipo = "ob"; r.titolo = resto;
+  } else if ((mm = low.match(/^(?:spesa|lista della spesa|da comprare|(?:devo\s+)?compra(?:re)?|(?:devo\s+)?prendere|prendi)(?!\s+(?:un\s+|l')?appuntamento)\s*:?\s*(.*)$/))){
+    r.tipo = "spesa"; r.voci = dividiVoci(resto.slice(resto.length - mm[1].length));
+  } else if (!r.data && r.ora === null && !r.importo && /,|\se\s/.test(" " + low + " ") && dividiVoci(resto).every(v => v.split(" ").length <= 3) && dividiVoci(resto).length >= 2){
+    r.tipo = "spesa"; r.voci = dividiVoci(resto);
+  } else if (r.ora !== null){
+    r.tipo = "evento"; r.titolo = resto;
+  } else if (r.data){
+    r.tipo = "prom"; r.titolo = resto;
+  } else {
+    r.titolo = resto;
+  }
+
+  // soldi senza "euro": per entrate e dare/avere un numero da solo è l'importo
+  if ((r.tipo === "entrata" || r.tipo === "conti") && !r.importo){
+    if (oraNuda){ r.importo = +oraNuda; r.ora = null; r.fine = null; }   // "mi deve 20.50" non sono le 20:50
+    else {
+      const n = r.titolo.match(NUDO);
+      // in dare e avere solo se c'è il numero e basta ("Marco mi deve 20"), non in "2 casse di vino"
+      if (n && (r.tipo === "entrata" || soloNumero(r.titolo))){
+        r.importo = +(n[1].replace(/\./g, "") + (n[2] ? "." + n[2] : ""));
+        r.titolo = (r.titolo.slice(0, n.index) + " " + r.titolo.slice(n.index + n[0].length)).replace(/\s+/g, " ").trim();
+      }
+    }
+  }
+  // "ogni mese il 27" senza un giorno preciso: la prossima volta che è il 27
+  if (r.giornoMese && !r.data) r.data = prossimoGiornoMese(r.giornoMese, T);
+
+  // la nota: quello che viene dopo la prima virgola ("…, portare le lastre")
+  if (r.tipo !== "spesa" && /,/.test(r.titolo)){
+    const i = r.titolo.indexOf(",");
+    r.nota = r.titolo.slice(i + 1).trim();
+    r.titolo = r.titolo.slice(0, i).trim();
+  }
+  r.titolo = pulisciTitolo(r.titolo);
+  if (r.tipo === "conti" && !r.titolo && !r.importo) r.titolo = "";
+  if (r.tipo === "evento" && r.fine === null && r.ora !== null) r.fine = Math.min(23 * 60 + 59, r.ora + 60);
+  return r;
+}
+
+// la prossima volta che è il giorno g del mese (il 31 nei mesi corti diventa l'ultimo giorno)
+function prossimoGiornoMese(g, T){
+  const d0 = fromIso(T);
+  const nel = (y, mo) => iso(new Date(y, mo, Math.min(g, new Date(y, mo + 1, 0).getDate())));
+  const d = nel(d0.getFullYear(), d0.getMonth());
+  return d >= T ? d : nel(d0.getFullYear(), d0.getMonth() + 1);
+}
+
+function dividiVoci(s){
+  return String(s || "").split(/\s*(?:,|;|\be\b)\s*/i).map(x => pulisciTitolo(x)).filter(Boolean);
+}
+function pulisciTitolo(s){
+  let x = String(s || "").replace(/\s+/g, " ").trim();
+  x = x.replace(/^(di|il|la|lo|che|da|a|e|per)\s+/i, "").replace(/\s+(il|la|lo|di|alle|a|e|per)$/i, "").replace(/[\s,.;:!-]+$/, "").trim();
+  return x ? x.charAt(0).toUpperCase() + x.slice(1) : "";
+}
+
+const TIPI_FRASE = {
+  evento:  { nome:"Evento",       quick:"evento" },
+  prom:    { nome:"Promemoria",   quick:"prom" },
+  att:     { nome:"Attività",     quick:"att" },
+  spesa:   { nome:"Spesa",        quick:"spesa" },
+  frigo:   { nome:"Frigo",        quick:"frigo" },
+  conti:   { nome:"Dare e avere", quick:"conti" },
+  entrata: { nome:"Entrata",      quick:"entrata" },
+  ob:      { nome:"Obiettivo",    quick:"ob" }
+};
+
+// come la salverei: righe da mostrare prima di salvare
+function anteprimaFrase(r){
+  const righe = [];
+  const quando = r.data ? `${dayChip(r.data)}${r.ora !== null ? `, ${toHHMM(r.ora)}${r.fine !== null ? `–${toHHMM(r.fine)}` : ""}` : ""}` : (r.ora !== null ? `oggi, ${toHHMM(r.ora)}` : "");
+  if (r.tipo === "spesa") righe.push(["Da comprare", r.voci.join(", ") || r.titolo]);
+  else if (r.tipo === "conti"){
+    righe.push(["Con chi", r.chi || "—"]);
+    righe.push([r.dir === "avere" ? "Ti deve" : "Gli devi", r.importo ? euro(r.importo) : (r.titolo || "—")]);
+    if (r.data) righe.push(["Entro", dayChip(r.data)]);
+  } else {
+    righe.push(["Cosa", r.titolo || "—"]);
+    if (r.tipo === "evento") righe.push(["Quando", r.ora === null ? `${dayChip(r.data || today())}, tutto il giorno` : quando]);
+    if (r.tipo === "prom") righe.push(["Quando", r.data ? dayChip(r.data) : "oggi"]);
+    if (r.tipo === "frigo") righe.push(["Scade", r.data ? dayChip(r.data) : "fra 3 giorni"]);
+    if (r.tipo === "entrata"){ righe.push(["Quanto", r.importo ? euro(r.importo) : "—"]); righe.push(["Prevista", r.data ? dayChip(r.data) : "oggi"]); if (r.ogni === "monthly") righe.push(["Ogni", "mese"]); }
+    if (r.tipo === "ob") righe.push(["Entro", r.entro === "d" ? (r.data ? dayChip(r.data) : "—") : GPER[r.entro]]);
+    if (r.tipo === "att"){
+      righe.push(["Quando", r.ogni === "weekly" ? (r.giorni.length ? `ogni ${giorniLabel(r.giorni)}` : "ogni settimana") : r.ogni === "everyNDays" ? (r.n === 1 ? "ogni giorno" : `ogni ${r.n} giorni`) : `ogni ${r.n === 1 ? "mese" : r.n + " mesi"}${r.giornoMese ? `, il ${r.giornoMese}` : ""}`]);
+      if (r.ora !== null) righe.push(["Fascia", `${toHHMM(r.ora)}–${toHHMM(Math.min(1439, r.ora + 60))}`]);
+    }
+    if (r.luogo) righe.push(["Dove", r.luogo]);
+    if (r.nota) righe.push(["Nota", r.nota]);
+  }
+  return righe;
+}
+
+// salva senza aprire niente, con i valori che ho capito
+function salvaFrase(r){
+  const T = today(), id = Date.now();
+  const titolo = r.titolo || "Senza nome";
+  if (r.tipo === "evento"){
+    const allDay = r.ora === null;
+    S.oneoffs.push({ id:"o" + id, label: titolo, date: r.data || T, endDate: r.data || T,
+      start: allDay ? "09:00" : toHHMM(r.ora), end: allDay ? "10:00" : toHHMM(r.fine !== null ? r.fine : Math.min(1439, r.ora + 60)),
+      allDay, busy: !allDay, place: r.luogo, note: r.nota, showInMonth: true });
+  } else if (r.tipo === "prom"){
+    S.reminders.push({ id:"p" + id, text: titolo, body: r.nota || "", when: { type:"date", days:[dow(r.data || T)], date: r.data || T } });
+  } else if (r.tipo === "spesa"){
+    for (const v of (r.voci.length ? r.voci : [titolo])) addShopItem(v, "");
+  } else if (r.tipo === "frigo"){
+    S.fridge.push({ id:"fr" + id, name: titolo, exp: r.data || addDays(T, 3), qty:"", note: r.nota || "" });
+  } else if (r.tipo === "conti"){
+    S.ledger.push({ id:"l" + id, who: r.chi || "Qualcuno", kind: r.importo ? "soldi" : "cosa", dir: r.dir,
+      amount: r.importo || "", what: r.importo ? "" : titolo, date: T, due: r.data || "", note: r.nota || "", moves:[], closed:null, snooze:null });
+  } else if (r.tipo === "entrata"){
+    S.income = S.income || [];
+    S.income.push({ id:"in" + id, name: titolo, amount: r.importo || 0, from:"", cat: /stipendio/i.test(titolo) ? "Stipendio" : "Lavoro",
+      every: r.ogni === "monthly" ? "m" : "once", next: r.data || T, note: r.nota || "", log:[], closed:null });
+  } else if (r.tipo === "ob"){
+    S.goals.push({ id:"g" + id, name: titolo, per: r.entro === "d" ? "d" : (r.entro || "w"), due: r.entro === "d" ? (r.data || addDays(T, 7)) : "", done:{} });
+  } else if (r.tipo === "att"){
+    const rec = r.ogni === "weekly" ? { type:"weekly", n:1, start: T }
+              : r.ogni === "everyNDays" ? { type:"everyNDays", n: r.n || 1, start: r.data || T }
+              : { type:"monthly", n: r.n || 1, day: r.giornoMese || +(r.data || T).slice(8), start: T };
+    const days = r.ogni === "weekly" ? (r.giorni.length ? r.giorni : [dow(r.data || T)]) : [0,1,2,3,4,5,6];
+    const ws = r.ora !== null ? toHHMM(r.ora) : "21:00";
+    S.activities.push({ id:"a" + id, name: titolo, cat:"Varie", imp:2, dur:30, rec, days,
+      win:{ start: ws, end: toHHMM(Math.min(1439, toMin(ws) + 60)) }, from: T, moves:{}, skips:{}, handled:{}, lastDone:null, doneCount:0, skipCount:0 });
+    runEngine();
+  }
+  save();
+}
+
+// apre il modulo giusto, già compilato con quello che ho capito
+function apriFraseNelModulo(r){
+  const T = today();
+  QUICKPRE = r.titolo || "";
+  if (r.tipo === "evento"){
+    BOZZA = { tipo:"evento", campi: { date: r.data || T, endDate: r.data || T, start: r.ora !== null ? toHHMM(r.ora) : "17:00",
+      end: r.ora !== null ? toHHMM(r.fine !== null ? r.fine : Math.min(1439, r.ora + 60)) : "18:00", allDay: r.ora === null, place: r.luogo, note: r.nota } };
+    openOneoff(null);
+  } else if (r.tipo === "prom"){
+    BOZZA = { tipo:"prom", campi: { body: r.nota || "", when: { type:"date", days:[dow(r.data || T)], date: r.data || T } } };
+    openReminderEdit(null);
+  } else if (r.tipo === "att"){ salvaFrase(r); openForm(S.activities[S.activities.length - 1].id); }
+  else if (r.tipo === "conti"){
+    QUICKPRE = r.chi || "";
+    BOZZA = { tipo:"conti", campi: { kind: r.importo ? "soldi" : "cosa", dir: r.dir, amount: r.importo || "", what: r.importo ? "" : (r.titolo || ""), due: r.data || "", note: r.nota || "" } };
+    openLedgerItem(null);
+  } else if (r.tipo === "entrata"){
+    BOZZA = { tipo:"entrata", campi: { amount: r.importo || "", next: r.data || T, every: r.ogni === "monthly" ? "m" : "once", note: r.nota || "" } };
+    openIncome(null);
+  } else if (r.tipo === "ob"){
+    BOZZA = { tipo:"ob", campi: { per: r.entro || "w", due: r.data || addDays(T, 7) } };
+    openGoal(null);
+  } else if (r.tipo === "frigo"){
+    BOZZA = { tipo:"frigo", campi: { exp: r.data || addDays(T, 3), note: r.nota || "" } };
+    openFridgeItem(null);
+  } else { salvaFrase(r); render(); }
+}
+
+/* ---------- la dettatura ----------
+   Nell'app Android usa il riconoscimento vocale del telefono; nel browser
+   quello di Chrome, se c'è. */
+let DETTA_CB = null;
+const puoDettare = () => (inApp() && (parseFloat(natVersione()) >= 2.2 || typeof NAT.detta === "function"))
+  || !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+
+function detta(cb){
+  if (inApp() && (parseFloat(natVersione()) >= 2.2 || typeof NAT.detta === "function")){
+    DETTA_CB = cb;
+    try { NAT.detta(); } catch(e){ DETTA_CB = null; alert("La dettatura non parte: " + e); }
+    return;
+  }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR){ alert("Qui la dettatura non c'è: usa il microfono della tastiera."); return; }
+  const rec = new SR();
+  rec.lang = "it-IT"; rec.interimResults = false; rec.maxAlternatives = 1;
+  rec.onresult = e => { const t = e.results[0] && e.results[0][0] ? e.results[0][0].transcript : ""; if (t) cb(t); };
+  rec.onerror = () => {};
+  rec.start();
+}
+
+/* ============================================================
+   IL TASTO + — scrivi o detta, oppure scegli dove
    ============================================================ */
 let QUICKPRE = "";
 function preNome(){ const x = QUICKPRE; QUICKPRE = ""; return x; }
 
 const QUICK = [
-  { id:"spesa",  nome:"Spesa",        nota:"nella lista" },
-  { id:"diario", nome:"Diario",       nota:"riga di oggi" },
-  { id:"frigo",  nome:"Frigo",        nota:"scade fra 3 giorni" },
-  { id:"prom",   nome:"Promemoria",   nota:"da leggere" },
-  { id:"evento", nome:"Evento",       nota:"con data e ora" },
-  { id:"att",    nome:"Attività",     nota:"ricorrente" },
-  { id:"vino",   nome:"Vino",         nota:"in cantina" },
-  { id:"conti",  nome:"Dare e avere", nota:"soldi o cose" },
-  { id:"ob",     nome:"Obiettivo",    nota:"entro settimana o mese" },
-  { id:"inv",    nome:"Investimento", nota:"o salvadanaio" },
-  { id:"uscita", nome:"Uscita",        nota:"abbonamento o spesa" }
+  { id:"spesa",   nome:"Spesa",        nota:"nella lista" },
+  { id:"prom",    nome:"Promemoria",   nota:"da leggere" },
+  { id:"evento",  nome:"Evento",       nota:"con data e ora" },
+  { id:"att",     nome:"Attività",     nota:"che torna" },
+  { id:"frigo",   nome:"Frigo",        nota:"scade fra 3 giorni" },
+  { id:"diario",  nome:"Diario",       nota:"riga di oggi" },
+  { id:"conti",   nome:"Dare e avere", nota:"soldi o cose" },
+  { id:"ob",      nome:"Obiettivo",    nota:"entro una scadenza" },
+  { id:"entrata", nome:"Entrata",      nota:"prevista o arrivata" },
+  { id:"uscita",  nome:"Uscita",       nota:"abbonamento o spesa" },
+  { id:"inv",     nome:"Investimento", nota:"ISIN o nome" },
+  { id:"vino",    nome:"Vino",         nota:"in cantina" }
 ];
 
 function openQuick(){
@@ -6798,10 +8266,17 @@ function openQuick(){
   w.innerHTML = `
   <div class="sheetin">
     <h3>Aggiungi</h3>
-    <div class="field"><label>Cosa</label>
-      <input type="text" id="q-t" placeholder="Pomodori, dentista, Barolo 2019…" autocomplete="off"></div>
+    <div class="qbar">
+      <label for="q-t" style="position:absolute;left:-9999px">Scrivi o detta</label>
+      <input type="text" id="q-t" placeholder="Scrivi o detta: «dentista martedì alle 17»" autocomplete="off">
+      ${puoDettare() ? `<button class="qmic" id="q-mic" aria-label="Detta">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+      </button>` : ""}
+    </div>
+    <div id="q-capito"></div>
+    <h2 id="q-oppure">Oppure scegli dove</h2>
     <div class="tiles">
-      ${QUICK.map(q => `<button class="tile" data-q="${q.id}" style="min-height:78px">
+      ${QUICK.map(q => `<button class="tile" data-q="${q.id}" style="min-height:70px">
         <div class="tname">${q.nome}</div>
         <div class="tnote">${q.nota}</div>
       </button>`).join("")}
@@ -6811,40 +8286,141 @@ function openQuick(){
   </div>`;
   document.body.appendChild(w);
   const campo = w.querySelector("#q-t");
+  const box = w.querySelector("#q-capito");
   setTimeout(() => campo.focus(), 60);
   w.querySelector("#q-cancel").onclick = () => w.remove();
+
+  // quello che ho capito, e con un tocco il tipo giusto se ho sbagliato
+  let forzato = null, timer = null;
+  function capito(){
+    const testo = campo.value.trim();
+    if (!testo){ box.innerHTML = ""; w.querySelector("#q-oppure").textContent = "Oppure scegli dove"; return; }
+    const r = capisciFrase(testo);
+    if (forzato){
+      if (forzato === "spesa" && !r.voci.length) r.voci = dividiVoci(r.titolo);
+      if (forzato === "att" && !r.ogni){ r.ogni = "weekly"; if (!r.giorni.length) r.giorni = [dow(r.data || today())]; }
+      if (forzato === "ob" && !r.entro) r.entro = r.data ? "d" : "w";
+      if (forzato === "conti" && !r.chi){ r.chi = r.titolo; r.titolo = ""; }
+      r.tipo = forzato;
+    }
+    if (!r.tipo){
+      box.innerHTML = `<div class="hint" style="margin:10px 0 0">Non ho capito che cos'è: scegli qui sotto dove metterlo.</div>`;
+      w.querySelector("#q-oppure").textContent = "Dove lo metto?";
+      return;
+    }
+    w.querySelector("#q-oppure").textContent = "Oppure scegli un altro posto";
+    let giorno = "";
+    if (r.tipo === "evento"){
+      const d = r.data || today();
+      const L = dayLoad(d);
+      const sopra = r.ora !== null ? busyLabeled(d).filter(b => b.s < (r.fine !== null ? r.fine : r.ora + 60) && b.e > r.ora) : [];
+      giorno = `<div class="qload${sopra.length || L.word === "piena" ? " warn" : ""}">${esc(dayChip(d))}: ${esc(loadLine(L))}.${sopra.length ? ` Si sovrappone a ${esc(sopra.map(b => `${b.label} ${toHHMM(b.s)}–${toHHMM(b.e)}`).join(", "))}.` : r.ora !== null ? " A quell'ora sei libero." : ""}</div>`;
+    }
+    box.innerHTML = `<div class="card" style="margin-top:12px">
+      <div style="padding:12px 14px 4px;display:flex;gap:9px;align-items:center">
+        <span class="qtipo">${TIPI_FRASE[r.tipo].nome}</span>
+        <span class="rmeta">ho capito così</span>
+      </div>
+      ${anteprimaFrase(r).map(([k,v]) => `<div class="stat"><span>${esc(k)}</span><span style="text-align:right;color:var(--ink)">${esc(v)}</span></div>`).join("")}
+      ${giorno}
+    </div>
+    <div class="btnrow">
+      <button class="btn primary" id="q-salva" style="flex:2">Salva</button>
+      <button class="btn" id="q-modifica" style="flex:1">Modifica</button>
+    </div>
+    <div class="chips" style="margin-top:9px">
+      <span class="rmeta" style="padding:8px 2px 0 0">Ho capito male? Mettilo in:</span>
+      ${Object.entries(TIPI_FRASE).filter(([k]) => k !== r.tipo).map(([k,x]) => `<button class="chip" data-forza="${k}">${x.nome}</button>`).join("")}
+    </div>`;
+    box.querySelectorAll("[data-forza]").forEach(b => b.onclick = () => { forzato = b.dataset.forza; capito(); });
+    box.querySelector("#q-salva").onclick = () => {
+      salvaFrase(r); w.remove(); render();
+      toast(`Salvato in ${TIPI_FRASE[r.tipo].nome}.`);
+    };
+    box.querySelector("#q-modifica").onclick = () => { w.remove(); apriFraseNelModulo(r); };
+  }
+  campo.oninput = () => { forzato = null; clearTimeout(timer); timer = setTimeout(capito, 220); };
+  campo.onkeydown = e => { if (e.key === "Enter"){ clearTimeout(timer); capito(); const s = box.querySelector("#q-salva"); if (s) s.click(); } };
+  const mic = w.querySelector("#q-mic");
+  if (mic) mic.onclick = () => detta(t => { campo.value = t; forzato = null; capito(); });
 
   w.querySelectorAll("[data-q]").forEach(b => b.onclick = () => {
     const testo = campo.value.trim();
     const dove = b.dataset.q;
-    // le tre cose che si fanno al volo, senza aprire niente
+    // le cose al volo, senza aprire niente
     if (dove === "spesa"){
       if (!testo){ campo.focus(); return; }
-      addShopItem(testo, ""); w.remove(); render(); return;
+      for (const v of dividiVoci(testo)) addShopItem(v, "");
+      w.remove(); render(); toast("Aggiunto alla spesa."); return;
     }
     if (dove === "diario"){
       if (!testo){ campo.focus(); return; }
       const T = today();
       saveDiary(T, (S.diary[T] ? S.diary[T] + "\n" : "") + testo);
-      w.remove(); render(); return;
+      w.remove(); render(); toast("Scritto nel diario."); return;
     }
     if (dove === "frigo"){
       if (!testo){ campo.focus(); return; }
       S.fridge.push({ id:"fr"+Date.now(), name:testo, exp:addDays(today(),3), qty:"", note:"" });
-      save(); w.remove(); render(); return;
+      save(); w.remove(); render(); toast("Messo in frigo, scade fra 3 giorni."); return;
     }
     // le altre aprono il loro foglio, già col nome scritto
     QUICKPRE = testo;
     w.remove();
-    if (dove === "prom")   openReminderEdit(null);
-    if (dove === "evento") openOneoff(null);
-    if (dove === "att")    openForm(null);
-    if (dove === "vino")   openWine(null);
-    if (dove === "conti")  openLedgerItem(null);
-    if (dove === "ob")     openGoal(null);
-    if (dove === "inv")    openInvest(null);
-    if (dove === "uscita") openBill(null);
+    if (dove === "prom")    openReminderEdit(null);
+    if (dove === "evento")  openOneoff(null);
+    if (dove === "att")     openForm(null);
+    if (dove === "vino")    openWine(null);
+    if (dove === "conti")   openLedgerItem(null);
+    if (dove === "ob")      openGoal(null);
+    if (dove === "inv")     openInvest(null);
+    if (dove === "uscita")  openBill(null);
+    if (dove === "entrata") openIncome(null);
   });
+}
+
+// un messaggio che compare e se ne va
+function toast(testo){
+  const t = document.createElement("div");
+  t.className = "toast";
+  t.textContent = testo;
+  document.body.appendChild(t);
+  setTimeout(() => t.classList.add("via"), 2200);
+  setTimeout(() => t.remove(), 2700);
+}
+
+/* ============================================================
+   IL WIDGET — quello che si vede sulla schermata Home del telefono
+   La pagina gli passa la giornata di oggi e di domani; il widget poi
+   da solo capisce cosa c'è adesso e cosa viene dopo, anche ad app chiusa.
+   ============================================================ */
+function widgetDati(){
+  const T = today(), dom = addDays(T, 1);
+  const p = progress();
+  const voci = [];
+  // l'istante di "d alle min minuti": con setHours anche il giorno del cambio d'ora torna giusto
+  const istante = (d, min) => { const x = fromIso(d); x.setHours(0, min, 0, 0); return x.getTime(); };
+  for (const d of [T, dom]){
+    for (const v of vociDelGiorno(d)){
+      if (v.k === "routine") continue;
+      if ((v.k === "att" || v.k === "gctodo") && vocePronta(v, d)) continue;
+      voci.push({ t: v.label, s: istante(d, v.s), e: istante(d, v.e), k: v.k });
+    }
+  }
+  return {
+    giorno: T,
+    titolo: `${GG[dow(T)]} ${prettyDate(T)}`,
+    pct: isPaused() ? -1 : p.pct,
+    daFare: Math.max(0, p.total - p.done),
+    decidere: missedList().length,
+    voci,
+    aggiornato: Date.now()
+  };
+}
+
+function aggiornaWidget(){
+  if (!inApp() || !(parseFloat(natVersione()) >= 2.2 || typeof NAT.aggiornaWidget === "function")) return;
+  try { NAT.aggiornaWidget(JSON.stringify(widgetDati())); } catch(e){}
 }
 
 /* ============================================================
@@ -6968,16 +8544,16 @@ function avvisiDaProgrammare(){
     const d = addDays(T, i);
     const acts = planFor(d);
 
-    // il riassunto del mattino
+    // il riassunto del mattino: la giornata in breve, la stessa che trovi in Oggi
     if (S.push.on){
-      const rem = remindersOn(d).length, gct = gcalTodosOn(d).length;
-      const mr = i === 0 ? missedList().length : 0;
-      const pezzi = [];
-      if (acts.length + gct) pezzi.push(`${acts.length + gct} ${acts.length + gct === 1 ? "cosa da fare" : "cose da fare"}`);
-      if (rem) pezzi.push(`${rem} promemoria`);
-      if (mr) pezzi.push(`${mr} da ridecidere`);
-      if (pezzi.length) metti("giorno-" + d, alle(d, S.push.ora), "La giornata", pezzi.join(", ") + ".");
+      let frasi = [];
+      try { frasi = breveFrasi(d); } catch(e){}
+      if (frasi.length) metti("giorno-" + d, alle(d, S.push.ora), "La giornata in breve", frasi.join(" "));
     }
+
+    // la revisione della settimana
+    if (S.push.revisione !== false && revisioneGiorno(d) && !revFatta(d))
+      metti("rev-" + d, alle(d, revConf().ora), "La revisione della settimana", "Cinque minuti: com'è andata, come ti sei sentito, cosa arriva.");
 
     // le attività, all'inizio della loro fascia
     if (S.push.attivita && i < 7) for (const a of acts){
@@ -7054,6 +8630,13 @@ function avvisiDaProgrammare(){
       n => n === 0 ? "Ultimo giorno utile." : `Scade ${fraLabel(n)}.`, false);
   }
 
+  // entrate previste: il giorno previsto ti chiedo se sono arrivate
+  for (const x of incomeOpen()){
+    if (x.next < T) continue;
+    schedAvviso(metti, "inc-" + x.id + "-" + x.next, x.next, avvisoOf(x, "avviso", "entrata"), x.name,
+      n => n === 0 ? `Dovrebbe arrivare oggi: ${euro(+x.amount || 0)}. È arrivata?` : `${euro(+x.amount || 0)} in arrivo ${fraLabel(n)}.`, false);
+  }
+
   // dare e avere con una scadenza
   for (const e of ledgerOpen()){
     if (!e.due || e.due < T) continue;
@@ -7071,6 +8654,7 @@ function riprogrammaAvvisi(){
   if (!inApp()) return;
   clearTimeout(PUSHTIMER);
   PUSHTIMER = setTimeout(() => {
+    aggiornaWidget();
     try {
       NAT.annullaTutte();
       if (isPaused()) return;                       // se sei via, silenzio
@@ -7367,6 +8951,7 @@ if ("serviceWorker" in navigator && location.protocol.indexOf("http") === 0){
   }
   riprogrammaAvvisi();
   if (syncPronto()) sincronizza().then(() => docPrefetch());
+  if (window.__azione){ const a = window.__azione; window.__azione = null; window.dalTelefono("azione", a); }
   // il calendario si rilegge ogni dieci minuti mentre l'app è aperta
   setInterval(() => {
     if (document.hidden || !S.gcalOn || !gcalSupported()) return;
@@ -7386,6 +8971,8 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;
   if (RUN && !RUN.paused){ RUN.mark = Date.now() - 0; keepAwake(true); drawRun(); }
   if (S && S.lastRun !== today()){ runEngine(); render(); }
+  // riaperta al mattino: la giornata in breve, se non l'hai ancora vista
+  else if (S && TAB === "oggi" && breveDaAprire()) render();
 });
 </script>
 </body>
