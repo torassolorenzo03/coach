@@ -1622,6 +1622,7 @@ function renderOggi(){
     ${notifHTML()}
     ${pauseHTML(T)}
     ${resumeHTML()}
+    ${aggiornaAppHTML()}
 
     ${layoutOggi().filter(x => x.on).map(x => `<section class="riq" data-riq="${x.id}">${pezzi[x.id]()}</section>`).join("")}
 
@@ -2879,6 +2880,8 @@ function bindAll(){
   });
   el.querySelectorAll("[data-tredit]").forEach(b => b.onclick = () => openTracker(b.dataset.tredit));
   el.querySelectorAll("[data-rsa]").forEach(b => b.onclick = () => resumeAct(b.dataset.rsa, b.dataset.do));
+  const appDopo = el.querySelector("#appagg-dopo");
+  if (appDopo) appDopo.onclick = () => { S.appAggDopo = today(); save(); render(); };
   el.querySelectorAll("[data-goto]").forEach(b => b.onclick = () => { TAB = b.dataset.goto; render(); });
   el.querySelectorAll("[data-hide]").forEach(b => b.onclick = () => {
     const n = b.dataset.hide;
@@ -5596,6 +5599,23 @@ function drawRun(){
 const GCAL = { byDay:{}, list:[], series:{}, count:0, status:"idle", err:null, at:null, cals:[] };
 // l'app Android sa leggere il calendario dalla versione 2
 function natVersione(){ try { return String(NAT.versione() || ""); } catch(e){ return ""; } }
+
+/* L'app Android non si aggiorna da sola come le pagine: quando ne esce una nuova
+   che serve (dettatura, widget…), lo dico in cima a Oggi finché non la installi.
+   "Più tardi" la nasconde fino a domani. */
+const APP_NATIVA = "2.2";
+const appDaAggiornare = () => inApp() && parseFloat(natVersione() || "0") < parseFloat(APP_NATIVA);
+function aggiornaAppHTML(){
+  if (!appDaAggiornare() || S.appAggDopo === today()) return "";
+  return `<div class="card breve" style="border-color:var(--accent);margin-bottom:12px">
+    <div class="adlab" style="color:var(--accent)">App Android da aggiornare</div>
+    <div class="brevetxt">Sul telefono c'è la ${esc(natVersione() || "vecchia")}. Le pagine si aggiornano da sole, l'app no: la ${APP_NATIVA} serve per dettare dal + e per il widget della schermata Home. Si installa sopra quella che hai, i dati restano.</div>
+    <div class="btnrow" style="margin-top:10px">
+      <a class="btn primary" href="${linkApk()}" style="flex:2;display:block;text-align:center;text-decoration:none;box-sizing:border-box">Scarica la ${APP_NATIVA}</a>
+      <button class="btn ghost" id="appagg-dopo" style="flex:1">Più tardi</button>
+    </div>
+  </div>`;
+}
 const gcalSupported = () => inApp() && (parseFloat(natVersione()) >= 2 || typeof NAT.leggiCalendario === "function");
 
 function gcxOf(key){ return (S.gcx && S.gcx[key]) || {}; }
@@ -8246,7 +8266,7 @@ function serveAppNuova(){
     <h3>Per dettare serve l'app Android nuova</h3>
     <div class="hint" style="font-size:15px;line-height:1.5;margin-bottom:10px">Sul telefono c'è l'app ${esc(natVersione() || "vecchia")}. La dettatura usa il riconoscimento vocale del telefono, e quello lo sa fare solo dalla 2.2, che porta anche il widget per la schermata Home.</div>
     <div class="hint" style="font-size:15px;line-height:1.5">Scaricala e installala sopra quella che hai: i dati restano dove sono.</div>
-    <div class="btnrow"><a class="btn primary wide" id="na-scarica" href="${linkApk()}" style="display:block;text-align:center;text-decoration:none;box-sizing:border-box">Scarica l'app 2.2</a></div>
+    <div class="btnrow"><a class="btn primary wide" id="na-scarica" href="${linkApk()}" style="display:block;text-align:center;text-decoration:none;box-sizing:border-box">Scarica l'app ${APP_NATIVA}</a></div>
     <div class="btnrow"><button class="btn ghost wide" id="na-x">Chiudi</button></div>
     <div style="height:30px"></div></div>`;
   document.body.appendChild(w);
