@@ -4700,7 +4700,9 @@ function drawRun(){
    avvisi, se va spuntato per chiudere la giornata.
    ============================================================ */
 const GCAL = { byDay:{}, list:[], series:{}, count:0, status:"idle", err:null, at:null, cals:[] };
-const gcalSupported = () => inApp() && typeof NAT.leggiCalendario === "function";
+// l'app Android sa leggere il calendario dalla versione 2
+function natVersione(){ try { return String(NAT.versione() || ""); } catch(e){ return ""; } }
+const gcalSupported = () => inApp() && (parseFloat(natVersione()) >= 2 || typeof NAT.leggiCalendario === "function");
 
 function gcxOf(key){ return (S.gcx && S.gcx[key]) || {}; }
 
@@ -4823,7 +4825,7 @@ function gcalMessage(){
     case "permesso": return GCAL.negato
       ? "Android non ha dato il permesso. Se non compare più la richiesta, aprilo a mano: Impostazioni dell'app → Autorizzazioni → Calendario → Consenti."
       : "Serve il permesso di leggere il calendario del telefono.";
-    case "vecchia":  return "Sul telefono c'è ancora l'app Android vecchia, che non sa leggere il calendario: installa l'APK nuovo da github.com/torassolorenzo03/coach/releases.";
+    case "vecchia":  return `Sul telefono c'è ancora l'app Android vecchia (versione ${natVersione() || "?"}), che non sa leggere il calendario: serve la 2.0.`;
     case "browser":  return "Il calendario si legge solo dall'app Android. Nel browser vedi solo quello che scrivi qui.";
     case "err":      return "Non sono riuscito a leggere il calendario: " + (GCAL.err || "errore");
     case "spento":   return "Spento.";
