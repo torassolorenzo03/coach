@@ -6171,7 +6171,12 @@ function openInvest(id){
     </div>` : ""}` : ""}
 
     <div class="field"><label>Cosa</label>
-      <input type="text" id="iv-n" value="${esc(x.name)}" placeholder="BTP 2031, ETF mondo, conto deposito…"></div>
+      <div class="segline" style="margin-bottom:0">
+        <input type="text" id="iv-n" value="${esc(x.name)}" placeholder="ISIN o nome: IT0005436693, BTP 2031…" style="flex:1;min-width:0">
+        <button class="btn" id="iv-find" style="flex:0 0 auto">Cerca</button>
+      </div>
+      <div class="hint">Scrivi l'ISIN (lo trovi nell'app della banca) o il nome e tocca Cerca: compilo io tipo, cedola, scadenza e date.${x.isin ? ` ISIN: ${esc(x.isin)}.` : ""}</div>
+      <div id="iv-trova" style="margin-top:9px"></div></div>
 
     <div class="field"><label>Tipo</label>
       <div class="chips" id="iv-kind">${Object.entries(IKIND).map(([k,l]) => `<button class="chip" data-k="${k}">${l}</button>`).join("")}</div></div>
@@ -6244,6 +6249,53 @@ function openInvest(id){
     save(); w.remove(); openInvest(id);
   };
 
+  // LA RICERCA DEL TITOLO: compila il modulo, poi controlli tu
+  let trovato = null;
+  const box = w.querySelector("#iv-trova");
+  function applica(t){
+    trovato = t;
+    w.querySelector("#iv-n").value = t.titolo;
+    if (t.kind) kind = t.kind;
+    if (t.payType) payType = t.payType;
+    if (t.payEvery) payEvery = t.payEvery;
+    if (t.rate !== null && t.rate !== undefined) w.querySelector("#iv-r").value = t.rate;
+    if (t.nextPay) w.querySelector("#iv-np").value = t.nextPay;
+    if (t.maturity) w.querySelector("#iv-m").value = t.maturity;
+    const nota = w.querySelector("#iv-note");
+    if (t.isin && !nota.value.includes(t.isin)) nota.value = `ISIN ${t.isin}${nota.value ? " · " + nota.value : ""}`;
+    paintInv();
+    const fatto = [`tipo: ${(IKIND[t.kind] || "altro").toLowerCase()}`];
+    if (t.rate !== null && t.rate !== undefined && t.rate > 0) fatto.push(`cedola ${String(t.rate).replace(".", ",")}% l'anno`);
+    if (t.payType === "nessuna") fatto.push("non paga niente");
+    if (t.payEvery && t.payType === "cedola") fatto.push(IEVERY[t.payEvery] || `ogni ${t.payEvery} mesi`);
+    if (t.nextPay) fatto.push(`prossimo pagamento ${prettyDate(t.nextPay)} ${t.nextPay.slice(0,4)}`);
+    if (t.maturity) fatto.push(`scadenza ${prettyDate(t.maturity)} ${t.maturity.slice(0,4)}`);
+    box.innerHTML = `<div class="card" style="padding:13px 14px;border-color:var(--accent)">
+      <div class="rtitle" style="font-size:14px">Compilato: ${esc(t.titolo)}</div>
+      <div class="rmeta" style="margin-top:4px">${esc(fatto.join(" · "))}.</div>
+      ${t.dubbi.length ? `<div class="rmeta" style="margin-top:6px;color:var(--warn)">Da controllare: ${esc(t.dubbi.join("; "))}.</div>` : ""}
+      <div class="rmeta" style="margin-top:6px;color:var(--ink-faint)">Mancano solo quanto hai messo e quando.</div>
+    </div>`;
+  }
+  w.querySelector("#iv-find").onclick = async () => {
+    const q = w.querySelector("#iv-n").value;
+    box.innerHTML = `<div class="hint">Cerco…</div>`;
+    try {
+      const lista = await cercaTitolo(q);
+      if (!lista.length){ box.innerHTML = `<div class="hint" style="color:var(--warn)">Non ho trovato niente. Con l'ISIN la ricerca è più sicura.</div>`; return; }
+      if (lista.length === 1){ applica(lista[0]); return; }
+      box.innerHTML = `<div class="hint" style="margin:0 0 7px">Quale di questi?</div><div class="card">${lista.map((t,i) => `
+        <button class="actrow" data-tit="${i}">
+          <div class="rbody"><div class="rtitle" style="font-size:14.5px">${esc(t.titolo)}</div>
+            <div class="rmeta">${esc(titoloRiga(t))}</div></div>
+        </button>`).join("")}</div>`;
+      box.querySelectorAll("[data-tit]").forEach(b => b.onclick = () => applica(lista[+b.dataset.tit]));
+    } catch(e){
+      box.innerHTML = `<div class="hint" style="color:var(--warn)">${esc(e.message || String(e))}</div>`;
+    }
+  };
+  w.querySelector("#iv-n").onkeydown = e => { if (e.key === "Enter") w.querySelector("#iv-find").click(); };
+
   w.querySelector("#iv-cancel").onclick = () => w.remove();
   const cl = w.querySelector("#iv-close");
   if (cl) cl.onclick = () => { x.closed = { d: today() }; save(); w.remove(); render(); };
@@ -6263,12 +6315,156 @@ function openInvest(id){
       rate: w.querySelector("#iv-r").value,
       nextPay: payType === "nessuna" ? "" : (w.querySelector("#iv-np").value || ""),
       maturity: w.querySelector("#iv-m").value || "",
+      isin: trovato && trovato.isin ? trovato.isin : (x.isin || ""),
       avvisoPay: pPay.value(), avvisoMat: pMat.value(),
       note: w.querySelector("#iv-note").value.trim() };
     const i = S.invest.findIndex(y => y.id === x.id);
     if (i >= 0) S.invest[i] = next; else S.invest.push(next);
     save(); w.remove(); render();
   };
+}
+
+/* ============================================================
+   RICONOSCERE UN TITOLO — scrivi l'ISIN o il nome, il resto lo compilo io
+   La ricerca usa OpenFIGI, l'archivio gratuito dei codici dei titoli.
+   Per le obbligazioni il codice dice cedola e scadenza: da lì calcolo
+   le date dei pagamenti. Per ETF e azioni so dire il tipo, e per gli ETF
+   quasi sempre se distribuiscono; le date dei dividendi le metti tu.
+   ============================================================ */
+const RETE = { n: 0, attese: {} };
+window.dalRete = (id, json) => {
+  const f = RETE.attese[id];
+  if (!f) return;
+  delete RETE.attese[id];
+  try { f(JSON.parse(json)); } catch(e){ f({ stato: 0, errore: String(e) }); }
+};
+
+const reteNativa = () => inApp() && (parseFloat(natVersione()) >= 2.1 || typeof NAT.richiesta === "function");
+
+// Una richiesta a internet: dall'app la fa il telefono, nel browser ci prova la pagina.
+function richiestaWeb(metodo, url, corpo){
+  const testo = corpo ? JSON.stringify(corpo) : "";
+  if (reteNativa()){
+    return new Promise(ok => {
+      const id = "r" + (++RETE.n);
+      RETE.attese[id] = ok;
+      try { NAT.richiesta(id, metodo, url, testo, "application/json"); }
+      catch(e){ delete RETE.attese[id]; ok({ stato: 0, errore: String(e) }); return; }
+      setTimeout(() => { if (RETE.attese[id]){ delete RETE.attese[id]; ok({ stato: 0, errore: "nessuna risposta" }); } }, 30000);
+    });
+  }
+  return fetch(url, { method: metodo, headers: { "Content-Type": "application/json" }, body: testo || undefined })
+    .then(r => r.text().then(t => ({ stato: r.status, corpo: t })))
+    .catch(() => ({ stato: 0, errore: inApp() ? "rete" : "nel browser la ricerca è bloccata: usala dall'app Android" }));
+}
+
+const pulisciISIN = s => String(s || "").replace(/\s+/g, "").toUpperCase();
+const isISIN = s => /^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(pulisciISIN(s));
+
+async function cercaTitolo(testo){
+  const q = String(testo || "").trim();
+  if (q.length < 3) throw new Error("Scrivi almeno tre lettere, oppure l'ISIN.");
+  const perIsin = isISIN(q);
+  const r = perIsin
+    ? await richiestaWeb("POST", "https://api.openfigi.com/v3/mapping", [{ idType: "ID_ISIN", idValue: pulisciISIN(q) }])
+    : await richiestaWeb("POST", "https://api.openfigi.com/v3/search", { query: q });
+  if (r.stato === 429) throw new Error("Troppe ricerche di fila: aspetta un minuto e riprova.");
+  if (!r.stato) throw new Error(r.errore === "rete" || !r.errore ? "Non riesco a raggiungere l'archivio dei titoli: controlla la connessione." : r.errore);
+  if (r.stato >= 400) throw new Error(`L'archivio dei titoli ha risposto ${r.stato}.`);
+  let dati = [];
+  try {
+    const j = JSON.parse(r.corpo);
+    dati = perIsin ? ((j[0] && j[0].data) || []) : (j.data || []);
+  } catch(e){ throw new Error("Risposta incomprensibile dall'archivio dei titoli."); }
+  // lo stesso titolo è quotato su tante borse: ne tengo uno, preferendo Milano
+  const per = {};
+  for (const x of dati){
+    const k = (x.securityDescription || x.ticker || "") + "|" + (x.name || "");
+    if (!per[k] || x.exchCode === "IM") per[k] = x;
+  }
+  return Object.values(per).slice(0, 10).map(x => capisciTitolo(x, perIsin ? pulisciISIN(q) : ""));
+}
+
+const MESI3 = ["gen","feb","mar","apr","mag","giu","lug","ago","set","ott","nov","dic"];
+
+// "3 1/2" → 3.5, "3.5" → 3.5, "0" → 0
+function leggiTasso(parti){
+  let tot = 0, visto = false;
+  for (const p of parti){
+    if (/^\d+(\.\d+)?$/.test(p)){ tot += parseFloat(p); visto = true; }
+    else if (/^\d+\/\d+$/.test(p)){ const [a,b] = p.split("/").map(Number); if (b) { tot += a / b; visto = true; } }
+  }
+  return visto ? Math.round(tot * 1000) / 1000 : null;
+}
+
+function capisciTitolo(x, isin){
+  const sec = (x.marketSector || "").toLowerCase();
+  const t1 = (x.securityType || "").toLowerCase(), t2 = (x.securityType2 || "").toLowerCase();
+  const desc = String(x.securityDescription || x.ticker || "").trim();
+  const nome = String(x.name || desc || "").trim();
+  const tutto = (nome + " " + desc).toUpperCase();
+  const out = { isin, nome, desc, borsa: x.exchCode || "", kind: "altro", payType: "", payEvery: 0,
+                rate: null, nextPay: "", maturity: "", dubbi: [], titolo: nome };
+
+  if (t1.includes("etp") || (t2.includes("mutual fund") && /ETF|UCITS|ISHARES|XTRACKERS|VANGUARD|AMUNDI|LYXOR|SPDR|INVESCO|WISDOMTREE/.test(tutto)))
+    out.kind = "etf";
+  else if (t1.includes("fund") || t2.includes("mutual fund")) out.kind = "fondo";
+  else if (["govt","corp","muni","mtge"].includes(sec) || t2 === "bond" || t2.includes("note")) out.kind = "obbligazione";
+  else if (t1.includes("stock") || t2.includes("stock") || t2.includes("depositary") || t1.includes("preferred")) out.kind = "azione";
+
+  if (out.kind === "obbligazione"){
+    const tok = desc.split(/\s+/);
+    const iData = tok.findIndex(p => /^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(p));
+    if (iData > 0){
+      const [m, g, a] = tok[iData].split("/").map(Number);
+      const anno = a < 100 ? 2000 + a : a;
+      out.maturity = `${anno}-${String(m).padStart(2,"0")}-${String(g).padStart(2,"0")}`;
+      out.rate = leggiTasso(tok.slice(1, iData));
+    }
+    const emittente = (tok[0] || "").toUpperCase();
+    const variabile = /\bFRN\b|FLOAT|\bVAR\b/.test(tutto) || tok.slice(1, iData).some(p => /^[FV]$/i.test(p));
+    if (out.rate === 0 || /^(BOTS|ICTZ|BOT)$/.test(emittente)){
+      out.payType = "nessuna";
+    } else {
+      out.payType = "cedola";
+      // i titoli di Stato italiani e americani pagano ogni sei mesi; quasi tutti gli altri una volta l'anno
+      if (/^(BTP|CCT|T$|UKT)/.test(emittente)) out.payEvery = 6;
+      else { out.payEvery = 12; out.dubbi.push("ogni quanto paga la cedola (ho messo una volta l'anno, la regola più comune)"); }
+      if (/^BTPV|VALORE/.test(tutto)){ out.payEvery = 3; out.dubbi.push("il BTP Valore paga ogni tre mesi con cedola che sale nel tempo: controlla il tasso"); }
+      if (variabile){ out.rate = null; out.dubbi.push("è a tasso variabile: la cedola cambia ogni volta"); }
+    }
+    // la prossima cedola: si parte dalla scadenza e si torna indietro a passi regolari
+    if (out.payType === "cedola" && out.maturity){
+      const T = today();
+      let d = out.maturity, guard = 0;
+      while (addMonths(d, -out.payEvery) >= T && guard++ < 400) d = addMonths(d, -out.payEvery);
+      out.nextPay = d >= T ? d : "";
+    }
+    if (!out.maturity) out.dubbi.push("la scadenza: non l'ho trovata nel codice del titolo");
+    const mese = out.maturity ? `${MESI3[+out.maturity.slice(5,7) - 1]} ${out.maturity.slice(0,4)}` : "";
+    const tasso = out.rate !== null && out.rate !== undefined ? ` ${String(out.rate).replace(".", ",")}%` : "";
+    out.titolo = /^BTP/.test(emittente) ? `BTP${tasso} ${mese}`.trim()
+               : /^BOT/.test(emittente) ? `BOT ${mese}`.trim()
+               : `${nome}${tasso}${mese ? " " + mese : ""}`;
+  }
+
+  if (out.kind === "etf"){
+    if (/\bACC\b|ACCUM|CAPITALI|\(ACC\)/.test(tutto)) out.payType = "nessuna";
+    else if (/\bDIST\b|\bDIS\b|\bINC\b|DISTRIB|\(DIST\)|\bDY\b/.test(tutto)){ out.payType = "dividendo"; out.dubbi.push("ogni quanto distribuisce e la data del prossimo stacco"); }
+    else out.dubbi.push("se accumula o distribuisce: dal nome non si capisce");
+  }
+  if (out.kind === "azione"){ out.payType = "dividendo"; out.dubbi.push("se e quando paga il dividendo: mettilo tu se lo sai"); }
+  if (out.kind === "fondo") out.dubbi.push("se il fondo distribuisce proventi");
+  if (out.kind === "altro") out.dubbi.push("che tipo di titolo è: l'archivio non lo dice chiaramente");
+  return out;
+}
+
+function titoloRiga(t){
+  const tipo = IKIND[t.kind] || "Altro";
+  const bits = [tipo];
+  if (t.desc && t.desc !== t.nome) bits.push(t.desc);
+  if (t.borsa) bits.push(t.borsa);
+  return bits.join(" · ");
 }
 
 /* ============================================================
