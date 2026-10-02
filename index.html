@@ -311,6 +311,8 @@ details.vrout .row{padding-left:30px}
 .qbar{display:flex;gap:8px;align-items:center;background:var(--surface);border:1.5px solid var(--accent);border-radius:16px;padding:5px 5px 5px 14px;position:relative}
 .qbar input{flex:1;min-width:0;border:0;background:transparent;font-size:16px;padding:10px 0;outline:none}
 .qmic{flex:0 0 44px;width:44px;height:44px;border-radius:12px;border:0;background:var(--accent);color:var(--accent-ink);display:flex;align-items:center;justify-content:center;padding:0}
+.qmic.ascolta{animation:ascolta 1.1s ease-in-out infinite}
+@keyframes ascolta{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.55;transform:scale(.92)}}
 .qtipo{font-size:11.5px;font-weight:600;color:var(--accent-ink);background:var(--accent);border-radius:999px;padding:3px 10px}
 .qload{padding:10px 14px;font-size:13px;line-height:1.4;background:color-mix(in srgb,var(--accent) 8%,var(--surface));border-top:1px solid var(--line)}
 .qload.warn{background:color-mix(in srgb,var(--warn) 10%,var(--surface));color:var(--warn)}
@@ -5694,8 +5696,12 @@ function gcalAsk(){
 // il telefono ci racconta cosa è successo: permesso dato, app riaperta
 window.dalTelefono = (cosa, valore) => {
   // la dettatura è finita: il testo va a chi l'aveva chiesta
-  if (cosa === "dettato"){ const cb = DETTA_CB; DETTA_CB = null; if (cb && valore) cb(valore); return; }
-  if (cosa === "dettato-errore"){ DETTA_CB = null; alert("Su questo telefono la dettatura non c'è: usa il microfono della tastiera."); return; }
+  if (cosa === "dettato"){
+    const cb = DETTA_CB; DETTA_CB = null;
+    if (cb && valore) cb(valore); else if (cb) toast("Non ho sentito niente: riprova, o scrivi.");
+    return;
+  }
+  if (cosa === "dettato-errore"){ DETTA_CB = null; alert("Su questo telefono non trovo il riconoscimento vocale (di solito è quello dell'app Google). Intanto puoi usare il microfono della tastiera."); return; }
   // dal widget: il tasto + apre l'aggiunta al volo
   if (cosa === "azione"){
     if (!S){ window.__azione = valore; return; }
@@ -8218,25 +8224,74 @@ function apriFraseNelModulo(r){
 }
 
 /* ---------- la dettatura ----------
-   Nell'app Android usa il riconoscimento vocale del telefono; nel browser
-   quello di Chrome, se c'è. */
+   Nell'app Android usa il riconoscimento vocale del telefono: serve l'app 2.2,
+   perché la finestra web dentro l'app da sola non sa dettare. Nel browser usa
+   quello di Chrome. Ogni intoppo si dice a parole: niente tasti che non fanno nulla. */
 let DETTA_CB = null;
-const puoDettare = () => (inApp() && (parseFloat(natVersione()) >= 2.2 || typeof NAT.detta === "function"))
-  || !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+const dettaNativa = () => inApp() && (parseFloat(natVersione()) >= 2.2 || typeof NAT.detta === "function");
+// dentro l'app il microfono c'è sempre: se l'app è vecchia, toccandolo spiego cosa serve
+const puoDettare = () => inApp() || !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 
-function detta(cb){
-  if (inApp() && (parseFloat(natVersione()) >= 2.2 || typeof NAT.detta === "function")){
+// dove si scarica l'app Android: il deposito del sito
+function linkApk(){
+  const h = location.hostname, rep = location.pathname.split("/").filter(Boolean)[0];
+  if (/\.github\.io$/.test(h) && rep) return `https://github.com/${h.split(".")[0]}/${rep}/releases/download/apk/Coach.apk`;
+  return "https://github.com/torassolorenzo03/coach/releases/download/apk/Coach.apk";
+}
+
+function serveAppNuova(){
+  const w = document.createElement("div");
+  w.className = "sheet";
+  w.innerHTML = `<div class="sheetin">
+    <h3>Per dettare serve l'app Android nuova</h3>
+    <div class="hint" style="font-size:15px;line-height:1.5;margin-bottom:10px">Sul telefono c'è l'app ${esc(natVersione() || "vecchia")}. La dettatura usa il riconoscimento vocale del telefono, e quello lo sa fare solo dalla 2.2, che porta anche il widget per la schermata Home.</div>
+    <div class="hint" style="font-size:15px;line-height:1.5">Scaricala e installala sopra quella che hai: i dati restano dove sono.</div>
+    <div class="btnrow"><a class="btn primary wide" id="na-scarica" href="${linkApk()}" style="display:block;text-align:center;text-decoration:none;box-sizing:border-box">Scarica l'app 2.2</a></div>
+    <div class="btnrow"><button class="btn ghost wide" id="na-x">Chiudi</button></div>
+    <div style="height:30px"></div></div>`;
+  document.body.appendChild(w);
+  w.querySelector("#na-x").onclick = () => w.remove();
+}
+
+const DETTA_ERRORI = {
+  "no-speech": "Non ho sentito niente: riprova, o scrivi.",
+  "not-allowed": "Il microfono non ha il permesso: dallo nelle impostazioni del sito (il lucchetto accanto all'indirizzo).",
+  "service-not-allowed": "Qui la dettatura non è permessa: usa il microfono della tastiera.",
+  "audio-capture": "Il microfono non risponde: controlla che non lo stia usando un'altra app.",
+  "network": "Per dettare serve la connessione."
+};
+
+// cb riceve il testo; stato(true/false) accende e spegne il "ti ascolto" sul tasto
+function detta(cb, stato){
+  const segna = on => { try { stato && stato(on); } catch(e){} };
+  if (inApp()){
+    if (!dettaNativa()){ serveAppNuova(); return; }
     DETTA_CB = cb;
     try { NAT.detta(); } catch(e){ DETTA_CB = null; alert("La dettatura non parte: " + e); }
     return;
   }
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR){ alert("Qui la dettatura non c'è: usa il microfono della tastiera."); return; }
+  if (!SR){ toast("Qui la dettatura non c'è: usa il microfono della tastiera."); return; }
   const rec = new SR();
   rec.lang = "it-IT"; rec.interimResults = false; rec.maxAlternatives = 1;
-  rec.onresult = e => { const t = e.results[0] && e.results[0][0] ? e.results[0][0].transcript : ""; if (t) cb(t); };
-  rec.onerror = () => {};
-  rec.start();
+  let detto = false, errore = false, partito = false;
+  // certe finestre web dicono di saper dettare ma poi tacciono: se non parte, lo dico
+  const guardia = setTimeout(() => {
+    if (partito || detto || errore) return;
+    errore = true;
+    try { rec.abort(); } catch(e){}
+    segna(false);
+    toast("La dettatura non risponde: usa il microfono della tastiera.");
+  }, 12000);
+  rec.onstart = () => { partito = true; };
+  rec.onresult = e => { const t = e.results[0] && e.results[0][0] ? e.results[0][0].transcript : ""; if (t){ detto = true; cb(t); } };
+  rec.onerror = e => {
+    errore = true;
+    if (e.error !== "aborted") toast(DETTA_ERRORI[e.error] || "La dettatura non è riuscita: usa il microfono della tastiera.");
+  };
+  rec.onend = () => { clearTimeout(guardia); segna(false); if (!detto && !errore) toast(DETTA_ERRORI["no-speech"]); };
+  try { rec.start(); segna(true); }
+  catch(e){ clearTimeout(guardia); segna(false); toast("La dettatura non parte: usa il microfono della tastiera."); }
 }
 
 /* ============================================================
@@ -8342,7 +8397,10 @@ function openQuick(){
   campo.oninput = () => { forzato = null; clearTimeout(timer); timer = setTimeout(capito, 220); };
   campo.onkeydown = e => { if (e.key === "Enter"){ clearTimeout(timer); capito(); const s = box.querySelector("#q-salva"); if (s) s.click(); } };
   const mic = w.querySelector("#q-mic");
-  if (mic) mic.onclick = () => detta(t => { campo.value = t; forzato = null; capito(); });
+  if (mic) mic.onclick = () => detta(t => { campo.value = t; forzato = null; capito(); }, on => {
+    mic.classList.toggle("ascolta", on);
+    campo.placeholder = on ? "Ti ascolto…" : "Scrivi o detta: «dentista martedì alle 17»";
+  });
 
   w.querySelectorAll("[data-q]").forEach(b => b.onclick = () => {
     const testo = campo.value.trim();
