@@ -6369,7 +6369,10 @@ async function cercaTitolo(testo){
     ? await richiestaWeb("POST", "https://api.openfigi.com/v3/mapping", [{ idType: "ID_ISIN", idValue: pulisciISIN(q) }])
     : await richiestaWeb("POST", "https://api.openfigi.com/v3/search", { query: q });
   if (r.stato === 429) throw new Error("Troppe ricerche di fila: aspetta un minuto e riprova.");
-  if (!r.stato) throw new Error(r.errore === "rete" || !r.errore ? "Non riesco a raggiungere l'archivio dei titoli: controlla la connessione." : r.errore);
+  if (!r.stato){
+    if (inApp() && !reteNativa()) throw new Error(`Per cercare i titoli serve l'app Android aggiornata: sul telefono c'è la ${natVersione() || "vecchia"}, serve la 2.1. Scaricala di nuovo da GitHub e tocca Aggiorna.`);
+    throw new Error(r.errore === "rete" || !r.errore ? "Non riesco a raggiungere l'archivio dei titoli: controlla la connessione." : "Non riesco a raggiungere l'archivio dei titoli: " + r.errore);
+  }
   if (r.stato >= 400) throw new Error(`L'archivio dei titoli ha risposto ${r.stato}.`);
   let dati = [];
   try {
