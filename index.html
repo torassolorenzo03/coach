@@ -4800,6 +4800,7 @@ function gcalAsk(){
 // il telefono ci racconta cosa è successo: permesso dato, app riaperta
 window.dalTelefono = (cosa, valore) => {
   if (cosa === "calendario"){
+    GCAL.negato = valore !== "si";
     if (valore === "si"){ S.gcalOn = true; salvaSolo(); }
     gcalStart();
   }
@@ -4819,8 +4820,10 @@ function gcalMessage(){
       const fissi = serie.filter(x => x.recurring).length, singoli = serie.length - fissi;
       return `Letto ${GCAL.at ? `alle ${new Date(GCAL.at).toTimeString().slice(0,5)}` : ""}: ${fissi} ${fissi === 1 ? "impegno ripetuto" : "impegni ripetuti"} e ${singoli} ${singoli === 1 ? "evento" : "eventi"} nei prossimi quattro mesi.`;
     }
-    case "permesso": return "Serve il permesso di leggere il calendario del telefono.";
-    case "vecchia":  return "Questa versione dell'app Android non sa leggere il calendario: installa l'APK nuovo.";
+    case "permesso": return GCAL.negato
+      ? "Android non ha dato il permesso. Se non compare più la richiesta, aprilo a mano: Impostazioni dell'app → Autorizzazioni → Calendario → Consenti."
+      : "Serve il permesso di leggere il calendario del telefono.";
+    case "vecchia":  return "Sul telefono c'è ancora l'app Android vecchia, che non sa leggere il calendario: installa l'APK nuovo da github.com/torassolorenzo03/coach/releases.";
     case "browser":  return "Il calendario si legge solo dall'app Android. Nel browser vedi solo quello che scrivi qui.";
     case "err":      return "Non sono riuscito a leggere il calendario: " + (GCAL.err || "errore");
     case "spento":   return "Spento.";
@@ -5405,7 +5408,9 @@ function renderOpzioniSub(){
     corpo = `
     <div class="card">
       ${riga("Leggi Google Calendar", esc(gcalMessage()), sino("gtog", S.gcalOn, "Acceso", "Spento"))}
-      ${S.gcalOn && GCAL.status === "permesso" ? `<div class="row"><button class="btn primary wide" id="gc-perm">Dai il permesso</button></div>` : ""}
+      ${S.gcalOn && GCAL.status === "permesso" ? `<div class="row" style="gap:9px">
+        <button class="btn primary" id="gc-perm" style="flex:1">Dai il permesso</button>
+        <button class="btn" id="gc-app" style="flex:1">Apri autorizzazioni</button></div>` : ""}
       ${S.gcalOn && GCAL.status === "ok" ? `<div class="row"><button class="btn wide" id="gc-read">Rileggi adesso</button></div>` : ""}
     </div>
     <div class="hint">Lo leggo dal calendario del telefono, dove Google Calendar è già sincronizzato: niente password, funziona anche senza rete. Sola lettura: quello che scrivi qui non finisce su Google.</div>
@@ -5575,6 +5580,7 @@ function bindOpzioni(){
     gcalStart();
   });
   on("gc-perm", "onclick", () => gcalAsk());
+  on("gc-app", "onclick", () => { try { NAT.apriImpostazioniApp(); } catch(e){} });
   on("gc-read", "onclick", () => gcalStart());
   el.querySelectorAll("[data-gcal]").forEach(b => b.onclick = () => {
     const id = String(b.dataset.gcal);
@@ -7153,6 +7159,11 @@ if ("serviceWorker" in navigator && location.protocol.indexOf("http") === 0){
   gcalRead();
   runEngine();
   render();
+  // con l'app nuova, la prima volta il permesso del calendario lo chiedo io
+  if (S.gcalOn && GCAL.status === "permesso" && !S.gcalAsked){
+    S.gcalAsked = true; salvaSolo();
+    setTimeout(gcalAsk, 800);
+  }
   riprogrammaAvvisi();
   if (syncPronto()) sincronizza().then(() => docPrefetch());
   // il calendario si rilegge ogni dieci minuti mentre l'app è aperta
