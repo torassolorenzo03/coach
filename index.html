@@ -312,6 +312,8 @@ details.vrout .row{padding-left:30px}
 .qbar input{flex:1;min-width:0;border:0;background:transparent;font-size:16px;padding:10px 0;outline:none}
 .qmic{flex:0 0 44px;width:44px;height:44px;border-radius:12px;border:0;background:var(--accent);color:var(--accent-ink);display:flex;align-items:center;justify-content:center;padding:0}
 .qmic.ascolta{animation:ascolta 1.1s ease-in-out infinite}
+.gcnuovo{font-weight:760}
+.dacompl{display:inline-block;margin-left:7px;padding:1px 7px;border-radius:999px;font-size:11px;font-weight:600;line-height:1.5;color:var(--accent);border:1px solid var(--accent);vertical-align:2px;white-space:nowrap}
 @keyframes ascolta{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.55;transform:scale(.92)}}
 .qtipo{font-size:11.5px;font-weight:600;color:var(--accent-ink);background:var(--accent);border-radius:999px;padding:3px 10px}
 .qload{padding:10px 14px;font-size:13px;line-height:1.4;background:color-mix(in srgb,var(--accent) 8%,var(--surface));border-top:1px solid var(--line)}
@@ -502,7 +504,7 @@ let S = null;
 let TAB = "oggi";
 let DB = null;
 const LS_KEY = "coach.state.v1";
-const VERSIONE_APP = 27;
+const VERSIONE_APP = 28;
 
 async function loadState(){
   let local = null;
@@ -626,13 +628,33 @@ function migrate(){
   if (!S.breve) S.breve = { ...BREVE_DEF };
   if (!S.review) S.review = { ...REV_DEF, log:{} };
   if (!S.review.log) S.review.log = {};
+  // versione 28: ogni evento e impegno ha gli avvisi 1 ora, 30 e 10 minuti prima (più quelli
+  // che avevi scelto); gli eventi di Google completati non sono in grassetto; le cose da fissare
+  if (!S.gcOk) S.gcOk = {};
+  if (!S.dafissare) S.dafissare = [];
+  if (!S.v28){
+    const nuova = p => primeDi([60, 30, 10].concat(+p > 0 && +p !== 30 ? [+p] : []));
+    const aggiorna = (av, conPrima) => { if (av && !Array.isArray(av.prima)) av.prima = conPrima ? nuova(av.prima) : []; };
+    aggiorna(S.avvisiDef.evento, true);
+    S.oneoffs.forEach(o => {
+      aggiorna(o.avviso, !o.allDay);
+      if (o.avviso && avvisoUguale(avvisoOf(o, "avviso", "evento"), avvisoOf(null, "", "evento"), !o.allDay)) delete o.avviso;
+    });
+    for (const k in S.gcx){
+      const x = S.gcx[k];
+      aggiorna(x.avviso, true);
+      S.gcOk[k] = 1;                         // se ci avevi messo dei dettagli, è già completato
+    }
+    S.v28 = true;
+  }
 }
 
 /* Quando arrivano gli avvisi, se non scegli niente di diverso per una voce.
    giorni: quanti giorni prima (0 = il giorno stesso); ora: a che ora;
    prima: per gli eventi con orario, quanti minuti prima dell'inizio. */
 const AVVISI_DEF = {
-  evento:      { giorni:[],     ora:"09:00", prima:30 },
+  evento:      { giorni:[],     ora:"09:00", prima:[60, 30, 10] },
+  fisso:       { giorni:[],     ora:"09:00", prima:[60, 30, 10] },
   entrata:     { giorni:[0],    ora:"18:00" },
   pagamento:   { giorni:[3, 0], ora:"09:00" },
   scadenzaInv: { giorni:[30, 7], ora:"09:00" },
@@ -1241,6 +1263,8 @@ function notifiche(){
     out.push({ k:"google calendar", t: GCAL.status === "permesso" ? "Per leggere il calendario serve il tuo permesso: Impostazioni → Google Calendar" : "Per leggere il calendario installa l'app Android nuova" });
   const gn = gcalNew().length;
   if (gn) out.push({ k:"google calendar", t:`${gn === 1 ? "Una cosa nuova" : `${gn} cose nuove`} sul calendario: puoi aggiungere i dettagli` });
+  const dc = gcDaCompletare(T, 14).length;
+  if (dc) out.push({ k:"da completare", t:`${dc === 1 ? "Un evento di Google aspetta" : `${dc} eventi di Google aspettano`} i tuoi dettagli: sono quelli in grassetto` });
   for (const o of eventsOn(T)) out.push({ k:"oggi", t:`${o.label}${o.allDay ? " · tutto il giorno" : ` · ${o.start}`}${o.place ? ` · ${o.place}` : ""}` });
   if (S.gcalOn) for (const g of gcalOnDay(T)) if (!g.recurring)
     out.push({ k:"oggi", t:`${g.label}${g.allDay ? " · tutto il giorno" : ` · ${toHHMM(g.s)}`}${g.inst.place ? ` · ${g.inst.place}` : ""}` });
@@ -1256,6 +1280,9 @@ function notifiche(){
   for (const x of billAlerts(T)) out.push({ k:"uscite", t:x.t });
   for (const x of incomeAlerts(T)) out.push({ k:"entrate", t:x.t });
   if (revisioneDovuta()) out.push({ k:"revisione", t:"È il momento della revisione della settimana" });
+  const fxc = fxDaChiedere(T);
+  if (fxc.length) out.push({ k:"da fissare", t:`${fxc.length === 1 ? `«${fxc[0].titolo}» aspetta` : `${fxAperti().length} cose aspettano`} un posto in calendario: ti propongo io quando` });
+  for (const n of (S.fxNotizie || [])) if (n.d === T) out.push({ k:"da fissare", t: n.text });
   for (const x of investAlerts(T)) out.push({ k:"investimenti", t:x.t });
   for (const f of fridgeSoon(T)){
     const st = fridgeState(f, T);
@@ -1334,7 +1361,7 @@ function remindersBlock(T){
 const OGGI_RIQ = {
   breve:     { nome:"La giornata in breve", nota:"il racconto della giornata, solo nell'orario del mattino" },
   adesso:    { nome:"Adesso e poi", nota:"cosa stai facendo e cosa viene dopo" },
-  decidere:  { nome:"Da decidere", nota:"attività rimaste indietro e novità dal calendario" },
+  decidere:  { nome:"Da decidere", nota:"attività rimaste indietro, cose da fissare e novità dal calendario" },
   revisione: { nome:"Revisione della settimana", nota:"compare solo nel giorno che hai scelto" },
   giornata:  { nome:"La giornata in ordine di ora", nota:"impegni, eventi, routine e attività" },
   capita:    { nome:"Quando capita", nota:"promemoria, spesa, valigia, scadenze di oggi" },
@@ -1443,7 +1470,7 @@ function rigaVoce(v, T){
     return `<div class="row vrow ${isDone(T, id) ? "done" : ""}${adesso ? " vnow" : ""}" data-row="${id}">
       ${ora}
       <button class="tick" data-tick="${id}" aria-label="Segna fatto: ${esc(v.label)}">${ICO_TICK}</button>
-      <div class="rbody"><div class="rtitle">${esc(v.label)}</div>
+      <div class="rbody"><div class="rtitle">${gcTitolo(v.g.key, v.label)}</div>
         <div class="rmeta">${toHHMM(v.s)}–${toHHMM(v.e)}${ex.note ? `<span class="dot">·</span>${esc(ex.note)}` : ""}<span class="dot">·</span>Google</div></div>
       ${tag}
       <button class="btn ghost" data-gc="${v.g.key}" data-gcd="${T}" style="min-width:40px;padding:8px 0" aria-label="Dettagli">&#9881;</button>
@@ -1457,7 +1484,7 @@ function rigaVoce(v, T){
   return `<button class="actrow vrow${adesso ? " vnow" : ""}${passata ? " vpast" : ""}" ${attr}>
     ${ora}
     <div class="vmark">${fisso ? `<div class="vbar"></div>` : `<div class="vdot"></div>`}</div>
-    <div class="rbody"><div class="rtitle">${esc(v.label)}</div>
+    <div class="rbody"><div class="rtitle">${v.g ? gcTitolo(v.g.key, v.label) : esc(v.label)}</div>
       <div class="rmeta">fino alle ${toHHMM(v.e)}${luogo ? `<span class="dot">·</span>${esc(luogo)}` : ""}${nota ? `<span class="dot">·</span>${esc(nota)}` : ""}${v.g ? `<span class="dot">·</span>Google` : ""}</div></div>
     ${tag}
   </button>`;
@@ -1483,7 +1510,7 @@ function capitaHTML(T){
     </button>`;
   for (const r of remindersOn(T)) righe.push(reminderHTML(r, T));
   for (const o of eventsOn(T)) if (o.allDay) righe.push(info(`data-one="${o.id}"`, esc(o.label), `tutto il giorno${o.place ? ` · ${esc(o.place)}` : ""}`));
-  if (S.gcalOn) for (const g of gcalOnDay(T)) if (g.allDay) righe.push(info(`data-gc="${g.key}" data-gcd="${T}"`, esc(g.label), "tutto il giorno · Google"));
+  if (S.gcalOn) for (const g of gcalOnDay(T)) if (g.allDay) righe.push(info(`data-gc="${g.key}" data-gcd="${T}"`, gcTitolo(g.key, g.label), "tutto il giorno · Google"));
   if (shopDay(T)) righe.push(info(`data-prog="spesa"`, "Spesa", shopLeft() ? `${shopLeft()} ${shopLeft() === 1 ? "cosa" : "cose"} in lista` : "la lista è vuota"));
   for (const t of tripsOn(T)){
     const fatte = t.items.filter(i => tripDone(t.id, i.id)).length;
@@ -1548,8 +1575,7 @@ function adessoHTML(T){
 }
 
 function decidereHTML(T){
-  const a = replanHTML(T), b = gcalNewHTML(T);
-  return a + b;
+  return replanHTML(T) + fxHTML(T) + gcalNewHTML(T);
 }
 
 function soldiSettimanaHTML(T){
@@ -1756,6 +1782,14 @@ function breveFrasi(d){
   if (d === T){
     const mr = missedList();
     if (mr.length) out.push(`Da decidere: ${elenco(mr.map(m => minuscola(m.a.name)))}, ${mr.length === 1 ? "rimasta" : "rimaste"} indietro.`);
+  }
+
+  // le cose da fissare: quello che ti propongo oggi
+  if (d === T){
+    const fx = fxDaChiedere(T).map(x => ({ x, p: fxProposte(x, 1)[0] }));
+    const q = p => `${dayChip(p.d).toLowerCase()} alle ${orario(p.s)}`;
+    if (fx.length === 1) out.push(`Da fissare: ${minuscola(fx[0].x.titolo)}${fx[0].p ? `, ti propongo ${q(fx[0].p)}` : ""}.`);
+    else if (fx.length) out.push(`Da fissare: ${elenco(fx.map(({ x, p }) => `${minuscola(x.titolo)}${p ? ` (${q(p)})` : ""}`))}.`);
   }
 
   // soldi del giorno
@@ -2130,7 +2164,8 @@ const ICO = {
   vini:     `<path d="M8 3h8l-.6 6a3.4 3.4 0 0 1-6.8 0z"/><path d="M12 12.5V19M9 19h6"/>`,
   uscite:   `<rect x="2.5" y="5.5" width="19" height="13" rx="2.5"/><path d="M2.5 10h19M6 14.5h4"/>`,
   promemoria:`<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>`,
-  entrate:  `<path d="M12 19V5M5 12l7-7 7 7"/>`
+  entrate:  `<path d="M12 19V5M5 12l7-7 7 7"/>`,
+  fissare:  `<rect x="3" y="4" width="18" height="17" rx="3"/><path d="M8 2v4M16 2v4M3 10h18M12 13.5v4M10 15.5h4"/>`
 };
 
 /* ogni mattonella dice come sta messa, e si accende quando ha qualcosa da farti fare */
@@ -2198,13 +2233,13 @@ const ARCH_GRUPPI = [
 ];
 const ARCH_DI = {
   attivita:"giorno", routine:"giorno", promemoria:"giorno", spesa:"giorno", frigo:"giorno",
-  eventi:"agenda", impegni:"agenda", viaggi:"agenda", obiettivi:"agenda",
+  eventi:"agenda", impegni:"agenda", fissare:"agenda", viaggi:"agenda", obiettivi:"agenda",
   uscite:"soldi", entrate:"soldi", conti:"soldi", piggy:"soldi", invest:"soldi",
   diario:"te", vini:"te"
 };
 const ARCH_NOMI = {
   attivita:"Attività", routine:"Routine", promemoria:"Promemoria", spesa:"Spesa", frigo:"Frigo",
-  eventi:"Eventi", impegni:"Impegni fissi", viaggi:"Viaggi", obiettivi:"Obiettivi",
+  eventi:"Eventi", impegni:"Impegni fissi", fissare:"Da fissare", viaggi:"Viaggi", obiettivi:"Obiettivi",
   uscite:"Uscite", entrate:"Entrate", conti:"Dare e avere", piggy:"Salvadanaio", invest:"Investimenti",
   diario:"Diario", vini:"Vini"
 };
@@ -2227,6 +2262,9 @@ function archVoci(){
   const ia = incomeAlerts(T).length, prev = incomeOpen();
   voci.entrate = { id:"entrate", ico:"entrate", nome:"Entrate", hot: ia > 0,
     nota: ia ? `${ia} da confermare` : prev.length ? `${euro(prev.reduce((s,x) => s + (+x.amount || 0), 0))} previste` : "niente segnato" };
+  const fxa = fxAperti().length, fxc = fxDaChiedere(T).length;
+  voci.fissare = { id:"fissare", ico:"fissare", nome:"Da fissare", hot: fxc > 0 || fxInAttesa().length > 0,
+    nota: fxa ? `${fxa} senza data${fxInAttesa().length ? ` · ${fxInAttesa().length} su Google` : ""}` : fxInAttesa().length ? `${fxInAttesa().length} mandati a Google` : "niente in sospeso" };
   return voci;
 }
 
@@ -2360,6 +2398,11 @@ function renderBaseSub(){
   else if (v === "entrate"){
     nome = "Entrate"; sotto = "I soldi che arrivano: quelli previsti e quelli confermati. Il giorno previsto ti chiedo se sono arrivati.";
     corpo = entratePaginaHTML(T);
+  }
+
+  else if (v === "fissare"){
+    nome = "Da fissare"; sotto = "Gli impegni senza data. Te li propongo io con un orario libero; se va bene finiscono su Google Calendar.";
+    corpo = fxPaginaHTML(T);
   }
 
   else if (v === "routine"){
@@ -2859,6 +2902,7 @@ function openCrono(){
 
 /* ---------- i comandi, uguali dovunque compaiano ---------- */
 function bindAll(){
+  bindFx(el);
   el.querySelectorAll("[data-tick]").forEach(b => b.onclick = () => toggleDone(b.dataset.tick));
   el.querySelectorAll("[data-rtick]").forEach(b => b.onclick = () => toggleRoutine(b.dataset.rtick));
   el.querySelectorAll("[data-ttick]").forEach(b => b.onclick = () => toggleTripItem(b.dataset.trip, b.dataset.ttick));
@@ -3148,7 +3192,7 @@ function monthHTML(){
     // da Google: gli eventi sempre, gli impegni ripetuti solo se l'hai chiesto
     if (S.gcalOn) for (const g of gcalOnDay(d)){
       if (g.recurring && !gcxOf(g.key).showInMonth) continue;
-      evs.push({ t: g.allDay ? "tutto il dì" : `${toHHMM(g.s)}–${toHHMM(g.e)}`, n:g.label });
+      evs.push({ t: g.allDay ? "tutto il dì" : `${toHHMM(g.s)}–${toHHMM(g.e)}`, n:g.label, nuovo: !gcCompletato(g.key) });
     }
     for (const a of actsOn(d))
       evs.push({ t:`${a.win.start}–${a.win.end}`, n:a.name });
@@ -3165,7 +3209,7 @@ function monthHTML(){
     ${days.map(x => `
       <div class="monthday">
         <b>${GG3[dow(x.d)]} ${prettyDate(x.d)}</b>
-        ${x.evs.map(e => `<div class="mev"><span>${e.t}</span><span style="flex:1">${esc(e.n)}</span><button data-hide="${esc(e.n)}" style="background:none;border:0;color:var(--ink-faint);font-size:15px;padding:0 4px" aria-label="Nascondi">&times;</button></div>`).join("")}
+        ${x.evs.map(e => `<div class="mev"><span>${e.t}</span><span style="flex:1"${e.nuovo ? ` class="gcnuovo"` : ""}>${esc(e.n)}</span><button data-hide="${esc(e.n)}" style="background:none;border:0;color:var(--ink-faint);font-size:15px;padding:0 4px" aria-label="Nascondi">&times;</button></div>`).join("")}
       </div>`).join("")}
   </div>`;
 }
@@ -5601,15 +5645,15 @@ const GCAL = { byDay:{}, list:[], series:{}, count:0, status:"idle", err:null, a
 function natVersione(){ try { return String(NAT.versione() || ""); } catch(e){ return ""; } }
 
 /* L'app Android non si aggiorna da sola come le pagine: quando ne esce una nuova
-   che serve (dettatura, widget…), lo dico in cima a Oggi finché non la installi.
+   che serve (dettatura, widget, sveglie…), lo dico in cima a Oggi finché non la installi.
    "Più tardi" la nasconde fino a domani. */
-const APP_NATIVA = "2.2";
+const APP_NATIVA = "2.3";
 const appDaAggiornare = () => inApp() && parseFloat(natVersione() || "0") < parseFloat(APP_NATIVA);
 function aggiornaAppHTML(){
   if (!appDaAggiornare() || S.appAggDopo === today()) return "";
   return `<div class="card breve" style="border-color:var(--accent);margin-bottom:12px">
     <div class="adlab" style="color:var(--accent)">App Android da aggiornare</div>
-    <div class="brevetxt">Sul telefono c'è la ${esc(natVersione() || "vecchia")}. Le pagine si aggiornano da sole, l'app no: la ${APP_NATIVA} serve per dettare dal + e per il widget della schermata Home. Si installa sopra quella che hai, i dati restano.</div>
+    <div class="brevetxt">Sul telefono c'è la ${esc(natVersione() || "vecchia")}. Le pagine si aggiornano da sole, l'app no: la ${APP_NATIVA} porta ${esc(elenco(novitaDa(natVersione())))}. Si installa sopra quella che hai, i dati restano.</div>
     <div class="btnrow" style="margin-top:10px">
       <a class="btn primary" href="${linkApk()}" style="flex:2;display:block;text-align:center;text-decoration:none;box-sizing:border-box">Scarica la ${APP_NATIVA}</a>
       <button class="btn ghost" id="appagg-dopo" style="flex:1">Più tardi</button>
@@ -5619,6 +5663,22 @@ function aggiornaAppHTML(){
 const gcalSupported = () => inApp() && (parseFloat(natVersione()) >= 2 || typeof NAT.leggiCalendario === "function");
 
 function gcxOf(key){ return (S.gcx && S.gcx[key]) || {}; }
+
+// un evento di Google che non hai ancora completato (importanza, note, avvisi…) resta in grassetto,
+// dappertutto, finché non apri i suoi dettagli e salvi. Per quelli che si ripetono basta una volta.
+const gcCompletato = key => !!(S.gcOk && S.gcOk[key]);
+// quelli dei prossimi giorni ancora da completare (uno per serie)
+function gcDaCompletare(T, giorni){
+  if (!S.gcalOn || GCAL.status !== "ok") return [];
+  const fine = addDays(T, giorni), visti = new Set(), out = [];
+  for (const g of GCAL.list){
+    if (g.date < T || g.date > fine || gcCompletato(g.key) || visti.has(g.key)) continue;
+    visti.add(g.key); out.push(g);
+  }
+  return out;
+}
+const gcTitolo = (key, label) => gcCompletato(key) ? esc(label)
+  : `<span class="gcnuovo">${esc(label)}</span><span class="dacompl">da completare</span>`;
 
 // occupa il tempo? Di norma sì, tranne gli eventi di un giorno intero e quelli
 // segnati "libero" su Google. Quello che scegli qui dentro vince.
@@ -5701,6 +5761,7 @@ function gcalRead(){
   if (raw && !Array.isArray(raw) && raw.errore){ GCAL.status = "err"; GCAL.err = raw.errore; return; }
   gcalIngestNative(raw);
   GCAL.status = "ok"; GCAL.err = null; GCAL.at = Date.now();
+  fxAbbina();
 }
 
 function gcalStart(){
@@ -5722,6 +5783,15 @@ window.dalTelefono = (cosa, valore) => {
     return;
   }
   if (cosa === "dettato-errore"){ DETTA_CB = null; alert("Su questo telefono non trovo il riconoscimento vocale (di solito è quello dell'app Google). Intanto puoi usare il microfono della tastiera."); return; }
+  // un'altra app non si è aperta (il calendario per le cose da fissare)
+  if (cosa === "apertura-errore"){
+    if (valore === "calendario" && S){
+      const x = fxInAttesa().filter(y => y.proposta).sort((a, b) => b.proposta.at - a.proposta.at)[0];
+      if (x && Date.now() - x.proposta.at < 120000){ x.stato = "aperto"; x.proposta = null; save(); render(); }
+      alert("Non trovo l'app del calendario sul telefono: installa o riattiva Google Calendar e riprova.");
+    }
+    return;
+  }
   // dal widget: il tasto + apre l'aggiunta al volo
   if (cosa === "azione"){
     if (!S){ window.__azione = valore; return; }
@@ -5847,7 +5917,7 @@ function gcalNewHTML(T){
       return `<button class="actrow" data-gc="${x.key}" data-gcd="${prossima}">
         <div class="imp" style="min-height:32px;background:${x.recurring ? "var(--busy)" : "var(--accent)"}"></div>
         <div class="rbody">
-          <div class="rtitle">${esc(x.label)}</div>
+          <div class="rtitle">${gcTitolo(x.key, x.label)}</div>
           <div class="rmeta">${x.recurring ? `impegno fisso · ${esc(rruleLabel(x.rrule))}` : `evento · ${esc(dayChip(prossima).toLowerCase())}${x.sample.allDay ? "" : ` alle ${x.sample.start}`}`}</div>
         </div>
         <span class="flag" style="margin:0">dettagli</span>
@@ -5870,14 +5940,14 @@ function gcalEventsHTML(T){
       return `<button class="actrow" data-gc="${g.key}" data-gcd="${g.date}">
         <div class="imp ${ex.imp ? "i" + ex.imp : ""}" style="min-height:32px;${ex.imp ? "" : "background:var(--line)"}"></div>
         <div class="rbody">
-          <div class="rtitle">${esc(g.label)}</div>
+          <div class="rtitle">${gcTitolo(g.key, g.label)}</div>
           <div class="rmeta">${esc(dayChip(g.date))}<span class="dot">·</span>${esc(gcalWhen(g, g.date))}${g.place ? `<span class="dot">·</span>${esc(g.place)}` : ""}</div>
           ${extra.length ? `<div class="rmeta" style="color:var(--accent)">${extra.join(" · ")}</div>` : ""}
         </div>
       </button>`; }).join("")
     : `<div class="empty">Nessun evento singolo su Google nei prossimi due mesi.</div>`}
   </div>
-  <div class="hint">Tocca un evento per aggiungere importanza, note e avvisi. Si creano e si cambiano su Google Calendar.</div>`;
+  <div class="hint">Quelli in grassetto aspettano i tuoi dettagli: toccali per mettere importanza, note e avvisi, poi Salva. Si creano e si cambiano su Google Calendar.</div>`;
 }
 
 // nella pagina Impegni fissi: le cose che si ripetono su Google
@@ -5894,7 +5964,7 @@ function gcalFixedHTML(){
       return `<button class="actrow" data-gc="${x.key}">
         <div class="imp" style="min-height:30px;background:${gcBusy(x.sample) ? "var(--busy)" : "var(--line)"}"></div>
         <div class="rbody">
-          <div class="rtitle">${esc(x.label)}</div>
+          <div class="rtitle">${gcTitolo(x.key, x.label)}</div>
           <div class="rmeta">${esc(rruleLabel(x.rrule))}${x.sample.allDay ? "" : `<span class="dot">·</span>${x.sample.start}–${x.sample.end}`}</div>
           ${ex.todo || ex.note || ex.avviso ? `<div class="rmeta" style="color:var(--accent)">${[ex.todo ? "da spuntare" : "", ex.avviso ? "con avviso" : "", ex.note ? "con nota" : ""].filter(Boolean).join(" · ")}</div>` : ""}
         </div>
@@ -5912,7 +5982,8 @@ function openGcalItem(key, d){
   S.gcalSeen[key] = true; salvaSolo();
   const w = document.createElement("div");
   w.className = "sheet";
-  const picker = avvisoPicker("gc-av", ex.avviso || { giorni:[], ora:"09:00", prima:0 }, { prima: !g.allDay });
+  const tipoAv = x.recurring ? "fisso" : "evento";
+  const picker = avvisoPicker("gc-av", avvisoOf(ex, "avviso", tipoAv), { prima: !g.allDay });
   let imp = ex.imp || 0, todo = !!ex.todo, busy = ex.busy === undefined ? (!g.allDay && !g.free) : !!ex.busy, show = !!ex.showInMonth || !x.recurring;
   w.innerHTML = `
   <div class="sheetin">
@@ -5943,7 +6014,7 @@ function openGcalItem(key, d){
       <textarea id="gc-note" rows="3" placeholder="Cosa portare, con chi, cosa preparare…" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);resize:vertical">${esc(ex.note || "")}</textarea></div>
 
     <div class="field"><label>Avvisami</label>${picker.html}
-      <div class="hint">Google ti avvisa già con i suoi promemoria: questi sono in più, solo se li vuoi.</div></div>
+      <div class="hint">Sono gli avvisi di Coach, in più dei promemoria di Google. Quelli di partenza si cambiano in Impostazioni → Notifiche e avvisi.</div></div>
 
     <div class="btnrow">
       <button class="btn primary" id="gc-save" style="flex:2">Salva</button>
@@ -5980,8 +6051,10 @@ function openGcalItem(key, d){
     if (x.recurring && show) nuovo.showInMonth = true;
     const nota = w.querySelector("#gc-note").value.trim();
     if (nota) nuovo.note = nota;
-    if (av.giorni.length || av.prima) nuovo.avviso = av;
+    const avS = avvisoDaSalvare(av, tipoAv, !g.allDay);
+    if (avS) nuovo.avviso = avS;
     if (Object.keys(nuovo).length) S.gcx[key] = nuovo; else delete S.gcx[key];
+    S.gcOk[key] = 1;                         // completato: non è più in grassetto
     save(); w.remove(); render();
   };
 }
@@ -6212,7 +6285,8 @@ const sino = (id, on, si, no) => `<button class="btn ${on ? "primary" : ""}" id=
 const riga = (titolo, nota, destra) => `<div class="row" style="align-items:center"><div class="rbody"><div class="rtitle">${titolo}</div>${nota ? `<div class="rmeta">${nota}</div>` : ""}</div>${destra || ""}</div>`;
 
 const AVV_NOMI = {
-  evento:      ["Eventi", "quelli che scrivi qui; per quelli di Google scegli evento per evento"],
+  evento:      ["Eventi", "quelli singoli, scritti qui o su Google Calendar"],
+  fisso:       ["Impegni fissi", "quelli che si ripetono, scritti qui o su Google Calendar"],
   pagamento:   ["Cedole, dividendi, interessi", "il giorno in cui un investimento paga"],
   scadenzaInv: ["Scadenze degli investimenti", "obbligazioni, conti vincolati"],
   uscita:      ["Uscite", "abbonamenti, bollette, spese fisse"],
@@ -6313,8 +6387,12 @@ function renderOpzioniSub(){
       ${riga("Le attività", "Un avviso all'inizio della loro fascia oraria.", sino("op-pushatt", S.push.attivita))}
       ${riga("La chiusura serale", `Alle ${S.closeAt}, l'ora scelta in La giornata.`, sino("op-pushsera", S.push.sera))}
       ${riga("La revisione della settimana", `${GG[revConf().giorno]} alle ${revConf().ora}.`, sino("op-pushrev", S.push.revisione !== false))}
+      ${riga("Le cose da fissare", "Una volta al giorno ti chiedo di trovare un posto a quelle senza data.", sino("op-pushfx", S.push.fissare !== false))}
+      ${S.push.fissare !== false ? riga("A che ora", "", campoOra("op-pushfxora", S.push.fissareOra || "09:00")) : ""}
       ${riga("Orari esatti", "Senza questo permesso Android può far scivolare le notifiche di qualche minuto.", `<button class="btn" id="op-esatte" style="flex:0 0 auto">Apri</button>`)}
+      ${svegliaNativa() && !schermoInteroOk() ? riga("Sveglie a schermo intero", "Senza questo permesso la sveglia suona lo stesso, ma non si accende lo schermo.", `<button class="btn" id="op-schermo" style="flex:0 0 auto">Apri</button>`) : ""}
       <div class="row"><button class="btn wide" id="op-prova">Prova una notifica</button></div>
+      <div class="row"><button class="btn wide" id="op-provasv">Prova la sveglia</button></div>
     </div>`
     : `<div class="card"><div class="empty">Questa è la pagina nel browser: qui le notifiche non arrivano. Nell'app Android sì, con gli avvisi scelti qui sotto.</div></div>`}
 
@@ -6324,7 +6402,7 @@ function renderOpzioniSub(){
         <button class="actrow" data-avdef="${k}">
           <div class="rbody">
             <div class="rtitle">${nome}</div>
-            <div class="rmeta">${esc(avvisoLabel(avvisoOf(null, "", k), k === "evento"))}</div>
+            <div class="rmeta">${esc(avvisoLabel(avvisoOf(null, "", k), k === "evento" || k === "fisso"))}</div>
             <div class="rmeta" style="color:var(--ink-faint)">${nota}</div>
           </div>
         </button>`).join("")}
@@ -6480,7 +6558,7 @@ function renderOpzioniSub(){
 // un foglio per cambiare gli avvisi di partenza di un tipo di cosa
 function openAvvisoDef(tipo){
   const [nome] = AVV_NOMI[tipo];
-  const p = avvisoPicker("ad-av", avvisoOf(null, "", tipo), { prima: tipo === "evento" });
+  const p = avvisoPicker("ad-av", avvisoOf(null, "", tipo), { prima: tipo === "evento" || tipo === "fisso" });
   const w = document.createElement("div");
   w.className = "sheet";
   w.innerHTML = `<div class="sheetin">
@@ -6517,6 +6595,8 @@ function bindOpzioni(){
   on("op-pushatt", "onclick", () => { S.push.attivita = !S.push.attivita; save(); render(); });
   on("op-pushsera", "onclick", () => { S.push.sera = !S.push.sera; save(); render(); });
   on("op-pushrev", "onclick", () => { S.push.revisione = S.push.revisione === false; save(); render(); });
+  on("op-pushfx", "onclick", () => { S.push.fissare = S.push.fissare === false; save(); render(); });
+  on("op-pushfxora", "onchange", e => { S.push.fissareOra = e.target.value || "09:00"; save(); });
   const breve = patch => { S.breve = { ...breveConf(), ...patch }; save(); render(); };
   on("op-breve", "onclick", () => breve({ on: !breveConf().on }));
   on("op-breveapri", "onclick", () => breve({ apri: !breveConf().apri }));
@@ -6525,6 +6605,8 @@ function bindOpzioni(){
   if (OPTSUB === "riquadri") bindRiq(el, render);
   if (OPTSUB === "revisione") bindRevImpostazioni(el);
   on("op-prova", "onclick", () => provaNotifica());
+  on("op-provasv", "onclick", () => provaSveglia());
+  on("op-schermo", "onclick", () => { try { NAT.apriImpostazioniSchermoIntero(); } catch(e){} });
   on("op-esatte", "onclick", () => { try { NAT.apriImpostazioniSveglie(); } catch(e){} });
   el.querySelectorAll("[data-avdef]").forEach(b => b.onclick = () => openAvvisoDef(b.dataset.avdef));
   on("op-frigo", "onchange", e => { S.fridgeWarn = Math.max(0, Math.min(30, Math.round(+e.target.value || 0))); save(); render(); });
@@ -6747,10 +6829,12 @@ function openOneoff(id){
     if (fine < date) fine = date;
     if (!allDay && fine === date && toMin(e) <= toMin(s)){ alert("L'orario finisce prima di iniziare."); return; }
     const next = { ...o, label, date, endDate: fine, start:s, end:e, allDay,
-                   busy: allDay ? false : busyO, avviso: pAv.value(),
+                   busy: allDay ? false : busyO,
                    place: w.querySelector("#o-p").value.trim(),
                    note: w.querySelector("#o-n").value.trim(),
                    showInMonth: showO };
+    const avS = avvisoDaSalvare(pAv.value(), "evento", !allDay);
+    if (avS) next.avviso = avS; else delete next.avviso;
     const i = S.oneoffs.findIndex(x => x.id === o.id);
     if (i >= 0) S.oneoffs[i] = next; else S.oneoffs.push(next);
     runEngine(); save(); w.remove(); render();
@@ -6799,6 +6883,7 @@ function sonnoMedio(){
 function openFixed(id){
   const f = id ? S.fixed.find(x => x.id === id)
                : { id:"f"+Date.now(), label:"", days:[1], start:"09:00", end:"12:00" };
+  const pAv = avvisoPicker("x-av", avvisoOf(f, "avviso", "fisso"), { prima: true });
   const w = document.createElement("div");
   w.className = "sheet";
   w.innerHTML = `
@@ -6818,6 +6903,7 @@ function openFixed(id){
     <div class="field">
       <div class="chips"><button class="chip ${f.showInMonth ? "on" : ""}" id="x-show">Mostra nei prossimi 30 giorni</button></div>
       <div class="hint">Spento, occupa comunque il tempo: sparisce solo dalla lista degli impegni futuri.</div></div>
+    <div class="field"><label>Avvisami</label>${pAv.html}</div>
     <div class="btnrow">
       <button class="btn primary" id="x-save" style="flex:2">Salva</button>
       <button class="btn ghost" id="x-cancel">Annulla</button>
@@ -6827,6 +6913,7 @@ function openFixed(id){
   </div>`;
   document.body.appendChild(w);
 
+  pAv.bind(w);
   let showM = !!f.showInMonth;
   const showBtn = w.querySelector("#x-show");
   showBtn.onclick = () => { showM = !showM; showBtn.classList.toggle("on", showM); };
@@ -6848,6 +6935,8 @@ function openFixed(id){
     if (toMin(e) <= toMin(s)){ alert("L'orario finisce prima di iniziare."); return; }
     const next = { ...f, label: w.querySelector("#x-label").value.trim() || "Impegno",
                    days:[...daySel].sort(), start:s, end:e, showInMonth: showM };
+    const avS = avvisoDaSalvare(pAv.value(), "fisso", true);
+    if (avS) next.avviso = avS; else delete next.avviso;
     const i = S.fixed.findIndex(x => x.id === f.id);
     if (i >= 0) S.fixed[i] = next; else S.fixed.push(next);
     runEngine(); save(); w.remove(); render();
@@ -7938,6 +8027,397 @@ function openWine(id){
 }
 
 /* ============================================================
+   DA FISSARE — gli impegni senza data
+   Li scrivi o li detti senza giorno né ora. Ogni giorno la segretaria te ne
+   propone uno o due con un orario libero già scelto: se ti va bene lo mette
+   su Google Calendar (si apre già compilato, tu tocchi Salva), se no ne
+   scegli un altro o te lo richiede più avanti. Quando lo ritrova su Google,
+   ci aggiunge i dettagli che le avevi dato.
+   ============================================================ */
+const FX_DUR = [[15,"15 min"],[30,"30 min"],[60,"1 ora"],[90,"1 ora e mezza"],[120,"2 ore"],[180,"3 ore"],[240,"Mezza giornata"]];
+const FX_IMP = [[1,"Alta"],[2,"Media"],[3,"Bassa"]];
+const FX_PER_GIORNO = 2;                       // quante te ne chiedo al giorno, al massimo
+
+const fxTutti = () => S.dafissare || [];
+const fxAperti = () => fxTutti().filter(x => x.stato === "aperto");
+const fxInAttesa = () => fxTutti().filter(x => x.stato === "proposto");
+
+// l'ordine in cui te li chiedo: prima quelli con la scadenza più vicina, poi i più importanti, poi i più vecchi
+function fxOrdine(a, b){
+  return (a.entro || "9999").localeCompare(b.entro || "9999") || (a.imp || 2) - (b.imp || 2)
+    || (a.creato || "").localeCompare(b.creato || "");
+}
+function fxDaChiedere(d){
+  return fxAperti().filter(x => !x.rimandaFino || x.rimandaFino <= d).sort(fxOrdine).slice(0, FX_PER_GIORNO);
+}
+
+// le finestre libere di un giorno, in minuti, fra le 8 e le 21 (o fra sveglia e sonno, se è più stretto):
+// tolti impegni, eventi che occupano il tempo e fasce delle attività
+function fxFinestre(d){
+  const a0 = Math.max(awakeFrom() + 60, 8 * 60), a1 = Math.min(awakeTo() - 60, 21 * 60);
+  let a = a0;
+  if (d === today()) a = Math.max(a, Math.ceil((nowMin() + 60) / 30) * 30);   // oggi: almeno fra un'ora
+  if (a1 - a < 15) return [];
+  const occ = busyOn(d).concat(actsOn(d).map(x => [toMin(x.win.start), toMin(x.win.end)]))
+    .map(([s, e]) => [Math.max(s, a), Math.min(e, a1)]).filter(([s, e]) => e > s).sort((x, y) => x[0] - y[0]);
+  const out = [];
+  let cur = a;
+  for (const [s, e] of occ){ if (s > cur) out.push([cur, s]); cur = Math.max(cur, e); }
+  if (a1 > cur) out.push([cur, a1]);
+  return out;
+}
+
+// i posti buoni per una cosa da fissare: un orario per giorno, dal più consigliato.
+// Meglio presto (prestissimo se è importante), fra le 9 e le 19, lontano dal pranzo,
+// in una giornata non troppo piena; mai dopo la scadenza.
+function fxProposte(x, quante){
+  const T = today(), dur = +x.durata || 60;
+  const fine = x.entro && x.entro >= T ? x.entro : addDays(T, 20);
+  const out = [];
+  for (let d = T, i = 0; d <= fine && i < 31; d = addDays(d, 1), i++){
+    if (S.pause && d >= S.pause.from && (!S.pause.to || d <= S.pause.to)) continue;
+    let migliore = null;
+    for (const [a, b] of fxFinestre(d)){
+      for (let s = Math.ceil(a / 30) * 30; s + dur <= b; s += 30){
+        let punti = 0;
+        if (s < 9 * 60 || s + dur > 19 * 60) punti += 90;                    // troppo presto o troppo tardi
+        if (s < 14 * 60 && s + dur > 12 * 60 + 30) punti += 40;              // sopra il pranzo
+        punti += (s - Math.ceil(a / 30) * 30) / 30 * 4;                      // meglio appena sei libero
+        if (!migliore || punti < migliore.punti) migliore = { s, e: s + dur, punti, fin: [a, b] };
+      }
+    }
+    if (!migliore) continue;
+    // il buco c'è già: una cosa breve sta bene anche in una giornata piena, una lunga meglio in una leggera;
+    // aspettare pesa di più se è importante
+    const L = dayLoad(d);
+    const peso = 0.3 * Math.min(1, dur / 120), attesa = x.imp === 1 ? 160 : x.imp === 3 ? 25 : 60;
+    out.push({ d, s: migliore.s, e: migliore.e, fin: migliore.fin, L, score: L.score * peso + i * attesa + migliore.punti });
+  }
+  return out.sort((p, q) => p.score - q.score).slice(0, quante || 1);
+}
+
+const fxQuando = p => `${dayChip(p.d).toLowerCase()} alle ${toHHMM(p.s)}`;
+const fxPerche = p => `giornata ${p.L.word}, libero dalle ${toHHMM(p.fin[0])} alle ${toHHMM(p.fin[1])}`;
+const fxMeta = x => [minutiLabel(+x.durata || 60), x.imp === 1 ? "importante" : x.imp === 3 ? "poco importante" : "",
+  x.entro ? `entro ${dayChip(x.entro).toLowerCase()}` : "", x.luogo || ""].filter(Boolean).join(" · ");
+
+// "entro la settimana" e simili diventano una data
+function fxEntroDa(r){
+  const T = today();
+  if (r.entro === "d") return r.data || null;
+  if (r.entro === "w"){ let d = T; while (dow(d) !== 0) d = addDays(d, 1); return d; }
+  if (r.entro === "m"){ const x = fromIso(T); return iso(new Date(x.getFullYear(), x.getMonth() + 1, 0)); }
+  if (r.entro === "y") return `${T.slice(0, 4)}-12-31`;
+  return null;
+}
+
+/* ---------- su Google Calendar ---------- */
+function fxLinkGoogle(x, inizio, fine){
+  const f = ms => new Date(ms).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  const q = new URLSearchParams({ action: "TEMPLATE", text: x.titolo, dates: `${f(inizio)}/${f(fine)}`, details: x.nota || "", location: x.luogo || "" });
+  return "https://calendar.google.com/calendar/render?" + q.toString();
+}
+
+// Apre Google Calendar già compilato; quando l'evento compare lì, la cosa è fissata.
+function fxManda(x, p){
+  const inizio = istanteMin(p.d, p.s), fine = istanteMin(p.d, p.e);
+  if (inApp()){
+    if (typeof NAT.nuovoEventoGoogle !== "function"){ serveAppNuova("Per metterlo su Google Calendar"); return false; }
+    try { NAT.nuovoEventoGoogle(x.titolo, inizio, fine, x.luogo || "", x.nota || ""); }
+    catch(e){ alert("Google Calendar non si apre: " + e); return false; }
+  } else {
+    window.open(fxLinkGoogle(x, inizio, fine), "_blank");
+  }
+  x.stato = "proposto";
+  x.proposta = { d: p.d, s: p.s, e: p.e, at: Date.now(), prima: (GCAL.byDay[p.d] || []).map(g => g.key) };
+  save();
+  return true;
+}
+
+const fxNorm = t => senzaAccenti(String(t || "").toLowerCase()).replace(/[^a-z0-9]+/g, " ").trim();
+
+// Dopo ogni lettura del calendario: le cose mandate a Google sono arrivate?
+// Le riconosco dal nome, o dall'orario proposto se l'hai cambiato. Aspetto che Google le
+// abbia sincronizzate (hanno il loro codice), così i dettagli restano attaccati per sempre.
+function fxAbbina(){
+  if (!S.gcalOn || GCAL.status !== "ok" || !fxInAttesa().length) return;
+  const T = today(), fissati = [];
+  let cambiato = false;
+  for (const x of fxInAttesa()){
+    const p = x.proposta;
+    if (!p){ x.stato = "aperto"; cambiato = true; continue; }
+    const nome = fxNorm(x.titolo), dal = addDays(iso(new Date(p.at)), -1);
+    const cand = GCAL.list.filter(g => !g.recurring && g.date >= dal && (fxNorm(g.label) === nome
+      || (g.date === p.d && Math.abs(g.s - p.s) <= 15 && !(p.prima || []).includes(g.key))))
+      .sort((a, b) => Math.abs(daysBetween(a.date, p.d)) - Math.abs(daysBetween(b.date, p.d)));
+    const g = cand.find(c => c.key.startsWith("g:"));
+    if (g){
+      x.stato = "fissato";
+      x.fissato = { key: g.key, d: g.date, s: g.s, at: Date.now() };
+      const ex = { ...gcxOf(g.key), imp: x.imp || 2 };
+      if (x.nota && !ex.note) ex.note = x.nota;
+      S.gcx[g.key] = ex;
+      S.gcOk[g.key] = 1;                    // i dettagli ce li hai già messi: niente grassetto
+      S.gcalSeen[g.key] = true;
+      fissati.push(`${x.titolo}, ${dayChip(g.date).toLowerCase()} alle ${toHHMM(g.s)}`);
+      fxNotizia(`Fissato su Google Calendar: ${x.titolo}, ${dayChip(g.date).toLowerCase()} alle ${toHHMM(g.s)}.`);
+      cambiato = true;
+    } else if (!cand.length && (p.d < T || Date.now() - p.at > 3 * 86400000)){
+      x.stato = "aperto"; x.proposta = null;
+      fxNotizia(`«${x.titolo}» non lo trovo su Google Calendar: lo rimetto fra le cose da fissare.`);
+      cambiato = true;
+    }
+  }
+  if (cambiato) save();
+  if (fissati.length) try { toast(`Fissato: ${fissati.join("; ")}.`); } catch(e){}
+}
+
+// le notizie della giornata sulle cose da fissare
+function fxNotizia(text){
+  const T = today();
+  S.fxNotizie = (S.fxNotizie || []).filter(n => n.d === T).concat([{ d: T, text }]);
+}
+
+/* ---------- in Oggi: la segretaria chiede ---------- */
+function fxRigaHTML(x){
+  const p = fxProposte(x, 1)[0];
+  return `<div class="row" style="flex-direction:column;align-items:stretch;gap:8px" data-row="${x.id}">
+    <button class="rbody" data-fx="${x.id}" style="text-align:left;background:none;border:0;padding:0;font:inherit;color:inherit">
+      <div class="rtitle">${esc(x.titolo)}</div>
+      <div class="rmeta">${esc(fxMeta(x))}</div>
+      ${p ? `<div class="rmeta" style="color:var(--ink);margin-top:5px">Riesci <b>${esc(fxQuando(p))}</b>? ${esc(cap(fxPerche(p)))}.</div>`
+          : `<div class="rmeta" style="color:var(--warn);margin-top:5px">Non trovo un posto libero ${x.entro ? "prima della scadenza" : "nelle prossime tre settimane"}: scegli tu.</div>`}
+    </button>
+    <div class="why" style="margin-top:0">
+      ${p ? `<button class="on" data-fxok="${x.id}" data-d="${p.d}" data-s="${p.s}" data-e="${p.e}">Sì, su Google</button>` : ""}
+      <button data-fxaltro="${x.id}">Altro orario</button>
+      <button data-fxdopo="${x.id}">Più avanti</button>
+    </div>
+  </div>`;
+}
+
+function fxAttesaHTML(x){
+  const p = x.proposta || {};
+  const leggo = S.gcalOn && GCAL.status === "ok";
+  return `<div class="row" style="flex-direction:column;align-items:stretch;gap:8px">
+    <div class="rbody"><div class="rtitle">${esc(x.titolo)}</div>
+      <div class="rmeta">Mandato a Google Calendar per ${p.d ? esc(fxQuando(p)) : "un orario"}: ${leggo ? "appena lo salvi lo ritrovo qui." : "da qui non leggo il calendario, dimmi tu quando l'hai salvato."}</div></div>
+    <div class="why" style="margin-top:0">
+      ${leggo ? "" : `<button class="on" data-fxsalvato="${x.id}">L'ho salvato</button>`}
+      <button data-fxriapri="${x.id}">Riapri Google Calendar</button>
+      <button data-fxannulla="${x.id}">Non l'ho salvato</button>
+    </div>
+  </div>`;
+}
+
+function fxHTML(T){
+  const chiedi = fxDaChiedere(T), attesa = fxInAttesa();
+  if (!chiedi.length && !attesa.length) return "";
+  const altri = fxAperti().length - chiedi.length;
+  return `<div class="hrow"><h2>Da fissare</h2><span class="hsub">${fxAperti().length} senza data</span></div>
+  <div class="card">
+    ${chiedi.map(fxRigaHTML).join("")}
+    ${attesa.map(fxAttesaHTML).join("")}
+    ${altri > 0 ? `<button class="actrow" data-prog="fissare"><div class="rbody"><div class="rmeta">e ${altri === 1 ? "un'altra" : `altre ${altri}`} nell'Archivio, te le chiedo nei prossimi giorni</div></div></button>` : ""}
+  </div>`;
+}
+
+// i tasti, ovunque compaiano (Oggi, Archivio)
+function bindFx(root){
+  const trova = id => fxTutti().find(x => x.id === id);
+  root.querySelectorAll("[data-fx]").forEach(b => b.onclick = () => openFx(b.dataset.fx));
+  root.querySelectorAll("[data-fxok]").forEach(b => b.onclick = () => {
+    const x = trova(b.dataset.fxok); if (!x) return;
+    if (fxManda(x, { d: b.dataset.d, s: +b.dataset.s, e: +b.dataset.e })){ render(); toast("Controlla su Google Calendar e tocca Salva."); }
+  });
+  root.querySelectorAll("[data-fxaltro]").forEach(b => b.onclick = () => openFxOrario(b.dataset.fxaltro));
+  root.querySelectorAll("[data-fxdopo]").forEach(b => b.onclick = () => openFxDopo(b.dataset.fxdopo));
+  root.querySelectorAll("[data-fxriapri]").forEach(b => b.onclick = () => {
+    const x = trova(b.dataset.fxriapri); if (x && x.proposta && fxManda(x, x.proposta)) render();
+  });
+  root.querySelectorAll("[data-fxannulla]").forEach(b => b.onclick = () => {
+    const x = trova(b.dataset.fxannulla); if (!x) return;
+    x.stato = "aperto"; x.proposta = null; save(); render();
+  });
+  root.querySelectorAll("[data-fxsalvato]").forEach(b => b.onclick = () => {
+    const x = trova(b.dataset.fxsalvato); if (!x) return;
+    const p = x.proposta || {};
+    x.stato = "fissato"; x.fissato = { key: null, d: p.d || today(), s: p.s || 0, at: Date.now() };
+    save(); render(); toast("Fissato.");
+  });
+  const add = root.querySelector("#addfx"); if (add) add.onclick = () => openFx(null);
+}
+
+/* ---------- i fogli ---------- */
+// "più avanti": quando te lo richiedo
+function openFxDopo(id){
+  const x = fxTutti().find(y => y.id === id); if (!x) return;
+  const T = today();
+  const scelte = [[1, "Domani"], [3, "Fra 3 giorni"], [7, "Fra una settimana"], [14, "Fra due settimane"]];
+  const w = document.createElement("div");
+  w.className = "sheet";
+  w.innerHTML = `<div class="sheetin">
+    <h3>${esc(x.titolo)}</h3>
+    <div class="hint" style="margin-bottom:14px">Quando te lo richiedo?</div>
+    <div class="card">${scelte.map(([n, l]) => `<button class="actrow" data-n="${n}"><div class="rbody"><div class="rtitle">${l}</div><div class="rmeta">${esc(dayChip(addDays(T, n)))}</div></div></button>`).join("")}</div>
+    <div class="btnrow"><button class="btn wide" id="fxd-fatto">L'ho fatto senza calendario</button></div>
+    <div class="btnrow"><button class="btn ghost wide" id="fxd-x">Annulla</button></div>
+    <div style="height:30px"></div></div>`;
+  document.body.appendChild(w);
+  w.querySelectorAll("[data-n]").forEach(b => b.onclick = () => {
+    x.rimandaFino = addDays(T, +b.dataset.n); save(); w.remove(); render();
+    toast(`Te lo richiedo ${dayChip(x.rimandaFino).toLowerCase()}.`);
+  });
+  w.querySelector("#fxd-fatto").onclick = () => { x.stato = "fatto"; x.fatto = T; save(); w.remove(); render(); };
+  w.querySelector("#fxd-x").onclick = () => w.remove();
+}
+
+// scegliere un altro orario: i posti migliori, oppure giorno e ora a mano
+function openFxOrario(id){
+  const x = fxTutti().find(y => y.id === id); if (!x) return;
+  const T = today(), dur = +x.durata || 60;
+  const prop = fxProposte(x, 5);
+  const w = document.createElement("div");
+  w.className = "sheet";
+  w.innerHTML = `<div class="sheetin">
+    <h3>${esc(x.titolo)}</h3>
+    <div class="rmeta" style="margin:-6px 0 14px">${esc(fxMeta(x))}</div>
+    <h2 style="margin-top:0">I posti migliori</h2>
+    <div class="card">
+      ${prop.length ? prop.map(p => `<button class="actrow" data-d="${p.d}" data-s="${p.s}" data-e="${p.e}">
+        <div class="rbody"><div class="rtitle">${esc(dayChip(p.d))} · ${toHHMM(p.s)}–${toHHMM(p.e)}</div>
+          <div class="rmeta">${esc(cap(fxPerche(p)))}</div></div></button>`).join("")
+        : `<div class="empty">Non trovo un posto libero ${x.entro ? "prima della scadenza" : "nelle prossime tre settimane"}: scegli tu qui sotto.</div>`}
+    </div>
+    <h2>Oppure scegli tu</h2>
+    <div class="two">
+      <div class="field"><label for="fxo-d">Giorno</label>
+        <input type="date" id="fxo-d" value="${prop[0] ? prop[0].d : addDays(T, 1)}" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)"></div>
+      <div class="field"><label for="fxo-s">Ora</label>
+        <input type="time" id="fxo-s" value="${prop[0] ? toHHMM(prop[0].s) : "10:00"}"></div>
+    </div>
+    <div class="card" id="fxo-cons" style="padding:12px 14px;border-color:var(--accent)"></div>
+    <div class="btnrow"><button class="btn primary" id="fxo-ok" style="flex:2">Mettilo su Google Calendar</button><button class="btn ghost" id="fxo-x">Annulla</button></div>
+    <div style="height:30px"></div></div>`;
+  document.body.appendChild(w);
+  const manda = p => { if (fxManda(x, p)){ w.remove(); render(); toast("Controlla su Google Calendar e tocca Salva."); } };
+  w.querySelectorAll("[data-d]").forEach(b => b.onclick = () => manda({ d: b.dataset.d, s: +b.dataset.s, e: +b.dataset.e }));
+  const cons = () => {
+    const d = w.querySelector("#fxo-d").value, s = toMin(w.querySelector("#fxo-s").value || "10:00");
+    if (!d){ w.querySelector("#fxo-cons").innerHTML = ""; return; }
+    const L = dayLoad(d);
+    const sopra = busyLabeled(d).filter(b => b.s < s + dur && b.e > s);
+    w.querySelector("#fxo-cons").innerHTML = `<div class="rtitle" style="font-size:14px">${esc(dayChip(d))}, ${toHHMM(s)}–${toHHMM(Math.min(1439, s + dur))}</div>
+      <div class="rmeta" style="margin-top:4px;${sopra.length || L.word === "piena" ? "color:var(--warn)" : ""}">${esc(loadLine(L))}.${sopra.length ? ` Si sovrappone a ${esc(sopra.map(b => `${b.label} ${toHHMM(b.s)}–${toHHMM(b.e)}`).join(", "))}.` : " A quell'ora sei libero."}</div>`;
+  };
+  ["#fxo-d", "#fxo-s"].forEach(q => w.querySelector(q).addEventListener("change", cons));
+  cons();
+  w.querySelector("#fxo-ok").onclick = () => {
+    const d = w.querySelector("#fxo-d").value, s = toMin(w.querySelector("#fxo-s").value || "10:00");
+    if (!d){ alert("Scegli il giorno."); return; }
+    manda({ d, s, e: Math.min(1439, s + dur) });
+  };
+  w.querySelector("#fxo-x").onclick = () => w.remove();
+}
+
+// la scheda di una cosa da fissare
+function openFx(id){
+  const T = today();
+  const x = id ? fxTutti().find(y => y.id === id)
+               : { id: "fx" + Date.now(), titolo: preNome(), durata: 60, imp: 2, entro: null, luogo: "", nota: "", creato: T, stato: "aperto", ...prendiBozza("fissare") };
+  if (!x) return;
+  let durata = +x.durata || 60, imp = x.imp || 2;
+  const w = document.createElement("div");
+  w.className = "sheet";
+  w.innerHTML = `<div class="sheetin">
+    <h3>${id ? "Da fissare" : "Nuova cosa da fissare"}</h3>
+    <div class="hint" style="margin-bottom:14px">Senza giorno né ora: te la propongo io quando trovo un buco, e se ti va bene la metto su Google Calendar.</div>
+    <div class="field"><label for="fx-t">Cosa</label>
+      <input type="text" id="fx-t" value="${esc(x.titolo || "")}" placeholder="Chiamare il commercialista, dentista, tagliando…"></div>
+    <div class="field"><label>Quanto dura</label>
+      <div class="chips" id="fx-dur"></div>
+      <div class="segline" style="margin-top:9px"><input type="number" id="fx-durn" min="5" max="720" placeholder="Altro: minuti" style="flex:1;min-width:0;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)"></div></div>
+    <div class="field"><label>Importanza</label>
+      <div class="chips" id="fx-imp">${FX_IMP.map(([v, l]) => `<button class="chip" data-v="${v}">${l}</button>`).join("")}</div></div>
+    <div class="field"><label for="fx-entro">Entro quando (se c'è una scadenza)</label>
+      <input type="date" id="fx-entro" value="${x.entro || ""}" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)"></div>
+    <div class="field"><label for="fx-l">Dove</label>
+      <input type="text" id="fx-l" value="${esc(x.luogo || "")}" placeholder="Studio, via Roma 12, online…"></div>
+    <div class="field"><label for="fx-n">Nota</label>
+      <input type="text" id="fx-n" value="${esc(x.nota || "")}" placeholder="Cosa portare, chi chiamare…"></div>
+    ${id && x.stato === "fissato" && x.fissato ? `<div class="hint">Fissato ${esc(dayChip(x.fissato.d).toLowerCase())} alle ${toHHMM(x.fissato.s)}.</div>` : ""}
+    <div class="btnrow"><button class="btn primary" id="fx-save" style="flex:2">Salva</button><button class="btn ghost" id="fx-x">Annulla</button></div>
+    ${id && x.stato !== "fissato" ? `<div class="btnrow"><button class="btn wide" id="fx-ora">Proponimi un orario</button></div>` : ""}
+    ${id ? `<div class="btnrow"><button class="btn danger wide" id="fx-del">Elimina</button></div>` : ""}
+    <div style="height:30px"></div></div>`;
+  document.body.appendChild(w);
+  const paint = () => {
+    const altri = FX_DUR.some(([v]) => v === durata) ? "" : `<button class="chip on" data-v="${durata}">${minutiLabel(durata)}</button>`;
+    w.querySelector("#fx-dur").innerHTML = FX_DUR.map(([v, l]) => `<button class="chip${v === durata ? " on" : ""}" data-v="${v}">${l}</button>`).join("") + altri;
+    w.querySelectorAll("#fx-dur .chip").forEach(b => b.onclick = () => { durata = +b.dataset.v; paint(); });
+    w.querySelectorAll("#fx-imp .chip").forEach(b => b.classList.toggle("on", +b.dataset.v === imp));
+  };
+  w.querySelectorAll("#fx-imp .chip").forEach(b => b.onclick = () => { imp = +b.dataset.v; paint(); });
+  w.querySelector("#fx-durn").onchange = e => { const m = Math.round(+e.target.value); if (m >= 5){ durata = m; e.target.value = ""; paint(); } };
+  paint();
+  const leggi = () => {
+    const titolo = w.querySelector("#fx-t").value.trim();
+    if (!titolo){ alert("Scrivi cosa c'è da fissare."); return null; }
+    return { ...x, titolo, durata, imp, entro: w.querySelector("#fx-entro").value || null,
+             luogo: w.querySelector("#fx-l").value.trim(), nota: w.querySelector("#fx-n").value.trim() };
+  };
+  const salva = () => {
+    const next = leggi(); if (!next) return null;
+    S.dafissare = S.dafissare || [];
+    const i = S.dafissare.findIndex(y => y.id === x.id);
+    if (i >= 0) S.dafissare[i] = next; else S.dafissare.push(next);
+    save();
+    return next;
+  };
+  w.querySelector("#fx-save").onclick = () => { if (salva()){ w.remove(); render(); if (!id) toast("Te lo propongo io nei prossimi giorni."); } };
+  w.querySelector("#fx-x").onclick = () => w.remove();
+  const ora = w.querySelector("#fx-ora");
+  if (ora) ora.onclick = () => { const n = salva(); if (n){ w.remove(); render(); openFxOrario(n.id); } };
+  if (id) armDelete(w.querySelector("#fx-del"), "Elimina", () => { S.dafissare = S.dafissare.filter(y => y.id !== x.id); save(); w.remove(); render(); });
+}
+
+// la pagina nell'Archivio
+function fxPaginaHTML(T){
+  const aperti = fxAperti().sort(fxOrdine), attesa = fxInAttesa();
+  const fissati = fxTutti().filter(x => x.stato === "fissato" && x.fissato).sort((a, b) => (b.fissato.at || 0) - (a.fissato.at || 0)).slice(0, 20);
+  const fatti = fxTutti().filter(x => x.stato === "fatto").slice(-10);
+  return `
+    <div class="card">
+      ${aperti.length ? aperti.map(x => {
+        const p = fxProposte(x, 1)[0];
+        const quando = x.rimandaFino && x.rimandaFino > T ? `te lo richiedo ${dayChip(x.rimandaFino).toLowerCase()}`
+                     : p ? `ti propongo ${fxQuando(p)}` : "non trovo un posto libero";
+        return `<div class="row" style="align-items:center">
+          <button class="rbody" data-fx="${x.id}" style="text-align:left;background:none;border:0;padding:0;font:inherit;color:inherit">
+            <div class="rtitle">${esc(x.titolo)}</div>
+            <div class="rmeta">${esc(fxMeta(x))}</div>
+            <div class="rmeta" style="color:var(--accent)">${esc(quando)}</div></button>
+          <button class="btn" data-fxaltro="${x.id}" style="flex:0 0 auto">Fissa</button>
+        </div>`; }).join("")
+      : attesa.length ? `<div class="empty">Nient'altro da fissare: le ultime aspettano solo che le salvi su Google Calendar.</div>`
+      : `<div class="empty">Niente da fissare. Scrivi o detta dal + una cosa senza data, tipo «chiamare il commercialista»: te la propongo io quando c'è un buco.</div>`}
+      <div class="row"><button class="btn ghost wide" id="addfx">Aggiungi</button></div>
+    </div>
+    ${attesa.length ? `<h2>Mandati a Google Calendar</h2><div class="card">${attesa.map(fxAttesaHTML).join("")}</div>` : ""}
+    ${fissati.length ? `<details class="card" style="margin-top:16px">
+      <summary style="padding:13px 14px;font-size:13.5px;color:var(--ink-soft);cursor:pointer">Fissati · ${fissati.length}</summary>
+      ${fissati.map(x => `<button class="actrow" data-fx="${x.id}"><div class="rbody"><div class="rtitle">${esc(x.titolo)}</div>
+        <div class="rmeta">${esc(dayChip(x.fissato.d))} alle ${toHHMM(x.fissato.s)}</div></div></button>`).join("")}
+    </details>` : ""}
+    ${fatti.length ? `<details class="card" style="margin-top:12px">
+      <summary style="padding:13px 14px;font-size:13.5px;color:var(--ink-soft);cursor:pointer">Fatti senza calendario · ${fatti.length}</summary>
+      ${fatti.map(x => `<button class="actrow" data-fx="${x.id}"><div class="rbody"><div class="rtitle">${esc(x.titolo)}</div>
+        <div class="rmeta">${x.fatto ? esc(prettyDate(x.fatto)) : ""}</div></div></button>`).join("")}
+    </details>` : ""}
+    <div class="hint">Ogni giorno te ne propongo fino a ${FX_PER_GIORNO} in Oggi, con un orario libero. "Sì, su Google" apre Google Calendar già compilato: tocchi Salva e qui diventa fissato, con i dettagli che mi avevi dato.</div>`;
+}
+
+/* ============================================================
    SCRIVI O DETTA — una frase in italiano diventa la cosa giusta
    "dentista martedì alle 17 in via Roma, portare le lastre" → un evento.
    "ricordami venerdì di pagare il bollo" → un promemoria.
@@ -7962,8 +8442,8 @@ function prendiBozza(tipo){
 function capisciFrase(testo){
   const T = today();
   const r = { tipo: null, titolo: "", data: null, ora: null, fine: null, luogo: "", nota: "", importo: null,
-              chi: "", dir: "avere", giorni: [], ogni: null, n: 1, giornoMese: null, entro: null, voci: [] };
-  let t = " " + String(testo || "").normalize("NFC").replace(/\s+/g, " ").trim() + " ";
+              chi: "", dir: "avere", giorni: [], ogni: null, n: 1, giornoMese: null, entro: null, voci: [], durata: null, imp: null };
+  let t = " " + String(testo || "").normalize("NFC").replace(/[’‘`]/g, "'").replace(/\s+/g, " ").trim() + " ";
   const cerca = re => senzaAccenti(t).match(re);
   // toglie dal testo il pezzo trovato (stessa posizione: senzaAccenti non cambia le lunghezze)
   const togli = m => { if (m) t = t.slice(0, m.index) + " " + t.slice(m.index + m[0].length); };
@@ -8011,6 +8491,29 @@ function capisciFrase(testo){
   }
   if (r.fine !== null && r.ora !== null && r.fine <= r.ora && r.fine < 12 * 60) r.fine += 12 * 60;
   if (r.ora !== null && (r.ora < 0 || r.ora >= 24 * 60)) r.ora = null;
+
+  // fra poco: "fra due ore", "tra 20 minuti", "fra mezz'ora" → oggi, a quell'ora (arrotondata ai 5 minuti)
+  if (r.ora === null && (m = cerca(/\b(?:fra|tra)\s+(mezz' ?ora|un' ?ora|un ora|(\d+|due|tre|quattro|cinque|sei)\s+ore|(\d+)\s*(?:min|minuti))(\s+e\s+mezz[ao])?\b/i))){
+    const x = m[1].toLowerCase();
+    let min = /^mezz/.test(x) ? 30 : /^un/.test(x) ? 60 : m[2] ? (numIt(m[2].toLowerCase()) || 1) * 60 : +m[3];
+    if (m[4]) min += 30;
+    const quando = Math.ceil((nowMin() + min) / 5) * 5;
+    if (quando < 24 * 60){ r.ora = quando; r.data = T; togli(m); }
+  }
+
+  // quanto dura: "per un'ora", "mezz'ora", "2 ore e mezza", "45 minuti" (non "fra due ore")
+  if ((m = cerca(/(?<!\b(?:fra|tra)\s)\b(?:per\s+|dura\s+|durata\s+)?(mezz' ?ora|mezzora|un' ?ora|un ora|(\d+|due|tre|quattro|cinque|sei)\s+ore|(\d+)\s*(?:min|minuti))(\s+e\s+mezz[ao])?\b/i))){
+    const x = m[1].toLowerCase();
+    let min = /^mezz/.test(x) ? 30 : /^un/.test(x) ? 60 : m[2] ? (numIt(m[2].toLowerCase()) || 1) * 60 : +m[3];
+    if (m[4]) min += 30;
+    if (min >= 5 && min <= 720){ r.durata = min; togli(m); }
+  }
+
+  // l'importanza detta in coda: "…, urgente", "…, con calma"
+  if ((m = cerca(/,\s*(?:molto\s+)?(poco importante|non urgente|con calma|quando capita|se riesco|importante|urgente|urgentissim[oa]|prioritari[oa])\b/i))){
+    r.imp = /poco|non urgente|calma|capita|riesco/i.test(m[1]) ? 3 : 1;
+    togli(m);
+  }
 
   // giorni: oggi, stasera, domani, dopodomani, lunedì…, il 15, 15 ottobre, 15/10, fra 3 giorni
   if ((m = cerca(/\b(oggi|stasera|stamattina|stanotte)\b/i))){ r.data = T; if (/stasera/i.test(m[1]) && r.ora === null) r.ora = 20 * 60; togli(m); }
@@ -8087,14 +8590,17 @@ function capisciFrase(testo){
     r.tipo = "ob"; r.titolo = resto;
   } else if ((mm = low.match(/^(?:spesa|lista della spesa|da comprare|(?:devo\s+)?compra(?:re)?|(?:devo\s+)?prendere|prendi)(?!\s+(?:un\s+|l')?appuntamento)\s*:?\s*(.*)$/))){
     r.tipo = "spesa"; r.voci = dividiVoci(resto.slice(resto.length - mm[1].length));
-  } else if (!r.data && r.ora === null && !r.importo && /,|\se\s/.test(" " + low + " ") && dividiVoci(resto).every(v => v.split(" ").length <= 3) && dividiVoci(resto).length >= 2){
+  } else if (!r.data && r.ora === null && !r.importo && /,|\se\s/.test(" " + low + " ") && dividiVoci(resto).every(v => v.split(" ").length <= 3) && dividiVoci(resto).length >= 2
+             && !dividiVoci(senzaAccenti(resto)).some(v => /^[a-z]{3,}(are|ere|ire)\b/i.test(v))){    // "chiamare…, sistemare…" non è la spesa
     r.tipo = "spesa"; r.voci = dividiVoci(resto);
   } else if (r.ora !== null){
     r.tipo = "evento"; r.titolo = resto;
   } else if (r.data){
     r.tipo = "prom"; r.titolo = resto;
   } else {
+    // niente data e niente ora: un impegno da fissare, te lo propongo io
     r.titolo = resto;
+    if (resto) r.tipo = "fissare";
   }
 
   // soldi senza "euro": per entrate e dare/avere un numero da solo è l'importo
@@ -8118,9 +8624,15 @@ function capisciFrase(testo){
     r.nota = r.titolo.slice(i + 1).trim();
     r.titolo = r.titolo.slice(0, i).trim();
   }
+  if (r.tipo === "fissare"){
+    let mi;
+    if ((mi = senzaAccenti(r.titolo).match(/\b(poco importante|non urgente|quando capita|se riesco|con calma)\b/i))) r.imp = 3;
+    else if ((mi = senzaAccenti(r.titolo).match(/\b(importante|urgente|urgentissim[oa]|prioritari[oa])\b/i))) r.imp = 1;
+    if (mi) r.titolo = (r.titolo.slice(0, mi.index) + " " + r.titolo.slice(mi.index + mi[0].length)).replace(/\s+/g, " ").replace(/\s*,\s*$/, "");
+  }
   r.titolo = pulisciTitolo(r.titolo);
   if (r.tipo === "conti" && !r.titolo && !r.importo) r.titolo = "";
-  if (r.tipo === "evento" && r.fine === null && r.ora !== null) r.fine = Math.min(23 * 60 + 59, r.ora + 60);
+  if (r.tipo === "evento" && r.fine === null && r.ora !== null) r.fine = Math.min(23 * 60 + 59, r.ora + (r.durata || 60));
   return r;
 }
 
@@ -8149,7 +8661,8 @@ const TIPI_FRASE = {
   frigo:   { nome:"Frigo",        quick:"frigo" },
   conti:   { nome:"Dare e avere", quick:"conti" },
   entrata: { nome:"Entrata",      quick:"entrata" },
-  ob:      { nome:"Obiettivo",    quick:"ob" }
+  ob:      { nome:"Obiettivo",    quick:"ob" },
+  fissare: { nome:"Da fissare",   quick:"fissare" }
 };
 
 // come la salverei: righe da mostrare prima di salvare
@@ -8168,6 +8681,14 @@ function anteprimaFrase(r){
     if (r.tipo === "frigo") righe.push(["Scade", r.data ? dayChip(r.data) : "fra 3 giorni"]);
     if (r.tipo === "entrata"){ righe.push(["Quanto", r.importo ? euro(r.importo) : "—"]); righe.push(["Prevista", r.data ? dayChip(r.data) : "oggi"]); if (r.ogni === "monthly") righe.push(["Ogni", "mese"]); }
     if (r.tipo === "ob") righe.push(["Entro", r.entro === "d" ? (r.data ? dayChip(r.data) : "—") : GPER[r.entro]]);
+    if (r.tipo === "fissare"){
+      righe.push(["Quanto dura", minutiLabel(r.durata || 60)]);
+      if (r.imp) righe.push(["Importanza", r.imp === 1 ? "alta" : "bassa"]);
+      const entro = fxEntroDa(r);
+      if (entro) righe.push(["Entro", dayChip(entro)]);
+      const p = fxProposte({ durata: r.durata || 60, entro }, 1)[0];
+      righe.push(["Ti propongo", p ? `${dayChip(p.d)} alle ${toHHMM(p.s)}` : "scegli tu: non trovo un buco"]);
+    }
     if (r.tipo === "att"){
       righe.push(["Quando", r.ogni === "weekly" ? (r.giorni.length ? `ogni ${giorniLabel(r.giorni)}` : "ogni settimana") : r.ogni === "everyNDays" ? (r.n === 1 ? "ogni giorno" : `ogni ${r.n} giorni`) : `ogni ${r.n === 1 ? "mese" : r.n + " mesi"}${r.giornoMese ? `, il ${r.giornoMese}` : ""}`]);
       if (r.ora !== null) righe.push(["Fascia", `${toHHMM(r.ora)}–${toHHMM(Math.min(1439, r.ora + 60))}`]);
@@ -8200,6 +8721,10 @@ function salvaFrase(r){
     S.income = S.income || [];
     S.income.push({ id:"in" + id, name: titolo, amount: r.importo || 0, from:"", cat: /stipendio/i.test(titolo) ? "Stipendio" : "Lavoro",
       every: r.ogni === "monthly" ? "m" : "once", next: r.data || T, note: r.nota || "", log:[], closed:null });
+  } else if (r.tipo === "fissare"){
+    S.dafissare = S.dafissare || [];
+    S.dafissare.push({ id:"fx" + id, titolo, durata: r.durata || 60, imp: r.imp || 2, entro: fxEntroDa(r),
+      luogo: r.luogo || "", nota: r.nota || "", creato: T, stato:"aperto" });
   } else if (r.tipo === "ob"){
     S.goals.push({ id:"g" + id, name: titolo, per: r.entro === "d" ? "d" : (r.entro || "w"), due: r.entro === "d" ? (r.data || addDays(T, 7)) : "", done:{} });
   } else if (r.tipo === "att"){
@@ -8240,6 +8765,9 @@ function apriFraseNelModulo(r){
   } else if (r.tipo === "frigo"){
     BOZZA = { tipo:"frigo", campi: { exp: r.data || addDays(T, 3), note: r.nota || "" } };
     openFridgeItem(null);
+  } else if (r.tipo === "fissare"){
+    BOZZA = { tipo:"fissare", campi: { durata: r.durata || 60, imp: r.imp || 2, entro: fxEntroDa(r), luogo: r.luogo || "", nota: r.nota || "" } };
+    openFx(null);
   } else { salvaFrase(r); render(); }
 }
 
@@ -8259,12 +8787,20 @@ function linkApk(){
   return "https://github.com/torassolorenzo03/coach/releases/download/apk/Coach.apk";
 }
 
-function serveAppNuova(){
+// cosa porta ogni versione dell'app Android: per dire cosa manca a chi ne ha una più vecchia
+const NOVITA_APP = [
+  ["2.2", "la dettatura dal + e il widget per la schermata Home"],
+  ["2.3", "le sveglie degli eventi e il tasto per mettere su Google Calendar le cose da fissare"]
+];
+const novitaDa = v => NOVITA_APP.filter(([x]) => parseFloat(x) > parseFloat(v || "0")).map(([, t]) => t);
+
+// perche: "Per dettare", "Per la sveglia"… (cosa stavi provando a fare)
+function serveAppNuova(perche){
   const w = document.createElement("div");
   w.className = "sheet";
   w.innerHTML = `<div class="sheetin">
-    <h3>Per dettare serve l'app Android nuova</h3>
-    <div class="hint" style="font-size:15px;line-height:1.5;margin-bottom:10px">Sul telefono c'è l'app ${esc(natVersione() || "vecchia")}. La dettatura usa il riconoscimento vocale del telefono, e quello lo sa fare solo dalla 2.2, che porta anche il widget per la schermata Home.</div>
+    <h3>${esc(perche || "Per questo")} serve l'app Android nuova</h3>
+    <div class="hint" style="font-size:15px;line-height:1.5;margin-bottom:10px">Sul telefono c'è l'app ${esc(natVersione() || "vecchia")}. Le pagine si aggiornano da sole, l'app installata no: la ${APP_NATIVA} porta ${esc(elenco(novitaDa(natVersione())))}.</div>
     <div class="hint" style="font-size:15px;line-height:1.5">Scaricala e installala sopra quella che hai: i dati restano dove sono.</div>
     <div class="btnrow"><a class="btn primary wide" id="na-scarica" href="${linkApk()}" style="display:block;text-align:center;text-decoration:none;box-sizing:border-box">Scarica l'app ${APP_NATIVA}</a></div>
     <div class="btnrow"><button class="btn ghost wide" id="na-x">Chiudi</button></div>
@@ -8285,7 +8821,7 @@ const DETTA_ERRORI = {
 function detta(cb, stato){
   const segna = on => { try { stato && stato(on); } catch(e){} };
   if (inApp()){
-    if (!dettaNativa()){ serveAppNuova(); return; }
+    if (!dettaNativa()){ serveAppNuova("Per dettare"); return; }
     DETTA_CB = cb;
     try { NAT.detta(); } catch(e){ DETTA_CB = null; alert("La dettatura non parte: " + e); }
     return;
@@ -8324,6 +8860,7 @@ const QUICK = [
   { id:"spesa",   nome:"Spesa",        nota:"nella lista" },
   { id:"prom",    nome:"Promemoria",   nota:"da leggere" },
   { id:"evento",  nome:"Evento",       nota:"con data e ora" },
+  { id:"fissare", nome:"Da fissare",   nota:"senza data, te lo propongo io" },
   { id:"att",     nome:"Attività",     nota:"che torna" },
   { id:"frigo",   nome:"Frigo",        nota:"scade fra 3 giorni" },
   { id:"diario",  nome:"Diario",       nota:"riga di oggi" },
@@ -8410,7 +8947,7 @@ function openQuick(){
     box.querySelectorAll("[data-forza]").forEach(b => b.onclick = () => { forzato = b.dataset.forza; capito(); });
     box.querySelector("#q-salva").onclick = () => {
       salvaFrase(r); w.remove(); render();
-      toast(`Salvato in ${TIPI_FRASE[r.tipo].nome}.`);
+      toast(r.tipo === "fissare" ? "Fra le cose da fissare: te lo propongo io quando c'è un buco." : `Salvato in ${TIPI_FRASE[r.tipo].nome}.`);
     };
     box.querySelector("#q-modifica").onclick = () => { w.remove(); apriFraseNelModulo(r); };
   }
@@ -8454,6 +8991,7 @@ function openQuick(){
     if (dove === "inv")     openInvest(null);
     if (dove === "uscita")  openBill(null);
     if (dove === "entrata") openIncome(null);
+    if (dove === "fissare") openFx(null);
   });
 }
 
@@ -8503,40 +9041,90 @@ function aggiornaWidget(){
 
 /* ============================================================
    GLI AVVISI — quando il telefono ti avvisa
-   Per ogni cosa con una data (una cedola, un'uscita, un evento, un obiettivo)
-   scegli quanti giorni prima, anche più di una volta, e a che ora.
+   Per ogni cosa con una data scegli quanti giorni prima, anche più di una
+   volta, e a che ora. Per quello che ha un orario (eventi e impegni) anche
+   quanti minuti prima che cominci, quante volte vuoi, e una sveglia vera.
    Se non scegli niente valgono quelli delle impostazioni.
    ============================================================ */
 const AV_GIORNI = [[0,"Il giorno stesso"],[1,"1 giorno prima"],[2,"2 giorni prima"],[3,"3 giorni prima"],
                    [7,"1 settimana prima"],[14,"2 settimane prima"],[30,"1 mese prima"]];
-const AV_PRIMA  = [[0,"No"],[15,"15 min"],[30,"30 min"],[60,"1 ora"],[120,"2 ore"]];
+const AV_PRIMA  = [[5,"5 min"],[10,"10 min"],[15,"15 min"],[30,"30 min"],[60,"1 ora"],[120,"2 ore"],[1440,"1 giorno"]];
+const AV_SVEGLIA = [[null,"No"],[0,"All'inizio"],[10,"10 min prima"],[30,"30 min prima"],[60,"1 ora prima"],[120,"2 ore prima"]];
+
+// i minuti prima dell'inizio sono una lista (le versioni vecchie ne avevano uno solo)
+const primeDi = p => [...new Set((Array.isArray(p) ? p : [p]).map(Number).filter(n => n > 0))].sort((a,b) => b - a);
+const svegliaDi = v => (v === null || v === undefined || v === false || v === "") ? null : Math.max(0, Math.round(+v) || 0);
 
 function avvisoOf(obj, campo, tipo){
   const base = { ...AVVISI_DEF[tipo], ...((S.avvisiDef && S.avvisiDef[tipo]) || {}) };
   const x = obj && obj[campo];
   const src = x || base;
-  return { giorni: (src.giorni || []).slice(), ora: src.ora || base.ora || "09:00", prima: +(src.prima || 0) };
+  return { giorni: (src.giorni || []).slice(), ora: src.ora || base.ora || "09:00", prima: primeDi(src.prima), sveglia: svegliaDi(src.sveglia) };
+}
+
+// due avvisi uguali? Su una voce salvo solo quelli diversi da quelli di partenza:
+// così, se cambi i valori di partenza nelle impostazioni, cambiano anche lì.
+function avvisoUguale(a, b, conPrima){
+  const g = x => x.giorni.slice().sort((p,q) => p - q).join();
+  if (a.ora !== b.ora || g(a) !== g(b)) return false;
+  return !conPrima || (a.prima.join() === b.prima.join() && a.sveglia === b.sveglia);
+}
+function avvisoDaSalvare(av, tipo, conPrima){
+  return avvisoUguale(av, avvisoOf(null, "", tipo), conPrima) ? undefined : av;
 }
 
 const giorniPrimaLabel = g => g === 0 ? "il giorno stesso" : g === 1 ? "il giorno prima" : g === 7 ? "una settimana prima"
   : g === 14 ? "due settimane prima" : g === 30 ? "un mese prima" : `${g} giorni prima`;
 
+// 90 → "1 ora e 30 min", 1440 → "1 giorno"
+function minutiLabel(m){
+  if (m >= 1440 && m % 1440 === 0) return m === 1440 ? "1 giorno" : `${m / 1440} giorni`;
+  const h = Math.floor(m / 60), r = m % 60;
+  if (!h) return `${r} min`;
+  const hh = h === 1 ? "1 ora" : `${h} ore`;
+  return r ? `${hh} e ${r} min` : hh;
+}
+// per il testo delle notifiche: "fra un'ora", "fra mezz'ora", "fra 10 minuti"
+function fraMinuti(m){
+  if (m === 60) return "fra un'ora";
+  if (m === 30) return "fra mezz'ora";
+  if (m < 60) return `fra ${m} minuti`;
+  if (m === 1440) return "domani a quest'ora";
+  return "fra " + minutiLabel(m).replace(/ min$/, " minuti");
+}
+
 function avvisoLabel(av, conPrima){
-  const parti = av.giorni.slice().sort((a,b) => b - a).map(giorniPrimaLabel);
-  let s = parti.length ? `${parti.join(", ")}, alle ${av.ora}` : "";
-  if (conPrima && av.prima) s += (s ? " · " : "") + `${durLabel(av.prima)} prima dell'inizio`;
-  return s || "nessun avviso";
+  const parti = [];
+  const g = av.giorni.slice().sort((a,b) => b - a).map(giorniPrimaLabel);
+  if (g.length) parti.push(`${g.join(", ")}, alle ${av.ora}`);
+  if (conPrima && av.prima.length) parti.push(`${elenco(av.prima.map(minutiLabel))} prima dell'inizio`);
+  if (conPrima && av.sveglia !== null) parti.push(av.sveglia ? `sveglia ${minutiLabel(av.sveglia)} prima` : "sveglia all'inizio");
+  return parti.join(" · ") || "nessun avviso";
 }
 
 const fraLabel = g => g === 0 ? "oggi" : g === 1 ? "domani" : g === 7 ? "fra una settimana" : g === 30 ? "fra un mese" : `fra ${g} giorni`;
 
+// la sveglia vera la fa suonare l'app Android dalla 2.3; prima arriva come notifica
+const svegliaNativa = () => inApp() && typeof NAT.programmaSveglia === "function";
+
 // Il pezzo di modulo per scegliere gli avvisi. Si usa così:
 //   const p = avvisoPicker("id", avviso, { prima:true }); ... p.html ... p.bind(foglio); p.value()
+// Con prima:true (le cose con un orario) ci sono anche i minuti prima dell'inizio e la sveglia.
 function avvisoPicker(uid, av, opts){
   opts = opts || {};
-  const st = { giorni: (av.giorni || []).slice(), ora: av.ora || "09:00", prima: +(av.prima || 0) };
+  const st = { giorni: (av.giorni || []).slice(), ora: av.ora || "09:00", prima: primeDi(av.prima), sveglia: svegliaDi(av.sveglia) };
+  const etich = t => `<div style="font-size:13.5px;color:var(--ink-soft);margin:12px 0 7px">${t}</div>`;
   const html = `
     <div id="${uid}">
+      ${opts.prima ? `${etich("Prima che cominci").replace("margin:12px", "margin:0")}
+      <div class="chips" data-avp></div>
+      <div class="segline" style="margin-top:9px">
+        <input type="number" data-avpn min="1" max="10080" placeholder="Altro: quanti minuti prima" style="flex:1">
+        <button class="btn" data-avpadd style="flex:0 0 auto">Aggiungi</button>
+      </div>
+      ${etich("Sveglia: suona come quella del mattino, finché non la fermi")}
+      <div class="chips" data-avs></div>
+      ${etich("E nei giorni prima")}` : ""}
       <div class="chips" data-avg></div>
       <div class="segline" style="margin-top:9px">
         <input type="number" data-avn min="1" max="365" placeholder="Altro: quanti giorni prima" style="flex:1">
@@ -8546,7 +9134,6 @@ function avvisoPicker(uid, av, opts){
         <span style="flex:1;font-size:13.5px;color:var(--ink-soft)">A che ora</span>
         <input type="time" data-avora value="${st.ora}" style="flex:0 0 120px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface)">
       </div>
-      ${opts.prima ? `<div style="font-size:13.5px;color:var(--ink-soft);margin:4px 0 7px">E prima che cominci</div><div class="chips" data-avp></div>` : ""}
       <div class="hint" data-avh></div>
     </div>`;
   let root = null;
@@ -8563,10 +9150,23 @@ function avvisoPicker(uid, av, opts){
     });
     const pb = root.querySelector("[data-avp]");
     if (pb){
-      pb.innerHTML = AV_PRIMA.map(([v,l]) => `<button class="chip${st.prima === v ? " on" : ""}" data-p="${v}">${l}</button>`).join("");
-      pb.querySelectorAll("[data-p]").forEach(b => b.onclick = () => { st.prima = +b.dataset.p; paint(); });
+      const altri = st.prima.filter(m => !AV_PRIMA.some(([v]) => v === m));
+      pb.innerHTML = AV_PRIMA.map(([v,l]) => `<button class="chip${st.prima.includes(v) ? " on" : ""}" data-p="${v}">${l}</button>`).join("")
+        + altri.map(m => `<button class="chip on" data-p="${m}">${minutiLabel(m)} &times;</button>`).join("");
+      pb.querySelectorAll("[data-p]").forEach(b => b.onclick = () => {
+        const m = +b.dataset.p;
+        st.prima = st.prima.includes(m) ? st.prima.filter(x => x !== m) : primeDi([...st.prima, m]);
+        paint();
+      });
+      const sb = root.querySelector("[data-avs]");
+      sb.innerHTML = AV_SVEGLIA.map(([v,l]) => `<button class="chip${st.sveglia === v ? " on" : ""}" data-sv="${v === null ? "" : v}">${l}</button>`).join("")
+        + (st.sveglia !== null && !AV_SVEGLIA.some(([v]) => v === st.sveglia) ? `<button class="chip on" data-sv="${st.sveglia}">${minutiLabel(st.sveglia)} prima</button>` : "");
+      sb.querySelectorAll("[data-sv]").forEach(b => b.onclick = () => { st.sveglia = svegliaDi(b.dataset.sv); paint(); });
     }
-    root.querySelector("[data-avh]").textContent = "Ti avviso: " + avvisoLabel(st, !!opts.prima) + ".";
+    let h = "Ti avviso: " + avvisoLabel(st, !!opts.prima) + ".";
+    if (opts.prima && st.sveglia !== null && !svegliaNativa())
+      h += inApp() ? " La sveglia suona con l'app Android 2.3: con questa arriva come notifica." : " La sveglia suona solo nell'app Android.";
+    root.querySelector("[data-avh]").textContent = h;
   }
   return {
     html,
@@ -8579,20 +9179,45 @@ function avvisoPicker(uid, av, opts){
         if (g > 0 && !st.giorni.includes(g)) st.giorni.push(g);
         inp.value = ""; paint();
       };
+      const pa = root.querySelector("[data-avpadd]");
+      if (pa) pa.onclick = () => {
+        const inp = root.querySelector("[data-avpn]");
+        const m = Math.round(+inp.value);
+        if (m > 0) st.prima = primeDi([...st.prima, m]);
+        inp.value = ""; paint();
+      };
       paint();
     },
-    value(){ return { giorni: [...new Set(st.giorni)].sort((a,b) => b - a), ora: st.ora, prima: opts.prima ? st.prima : 0 }; }
+    value(){
+      return { giorni: [...new Set(st.giorni)].sort((a,b) => b - a), ora: st.ora,
+               prima: opts.prima ? primeDi(st.prima) : [], sveglia: opts.prima ? st.sveglia : null };
+    }
   };
 }
 
-// Programma le notifiche di una cosa con una data.
+// l'istante di "giorno d, minuto min" (anche negativo: il giorno prima). Con setHours il cambio d'ora torna giusto.
+const istanteMin = (d, min) => { const x = fromIso(d); x.setHours(0, min, 0, 0); return x.getTime(); };
+
+// Programma le notifiche di una cosa con una data. testo(giorniPrima, minutiPrima, sveglia)
 function schedAvviso(metti, idBase, data, av, titolo, testo, forte, inizioMin){
   for (const g of av.giorni){
-    metti(`${idBase}-g${g}`, alle(addDays(data, -g), av.ora), titolo, testo(g, false), forte);
+    metti(`${idBase}-g${g}`, alle(addDays(data, -g), av.ora), titolo, testo(g, 0, false), forte);
   }
-  if (av.prima && inizioMin !== undefined && inizioMin !== null)
-    metti(`${idBase}-p`, alle(data, "00:00") + (inizioMin - av.prima) * 60000, titolo, testo(0, true), forte);
+  if (inizioMin === undefined || inizioMin === null) return;
+  for (const m of primeDi(av.prima))
+    metti(`${idBase}-p${m}`, istanteMin(data, inizioMin - m), titolo, testo(0, m, false), forte);
+  const sv = svegliaDi(av.sveglia);
+  if (sv !== null)
+    metti(`${idBase}-sv`, istanteMin(data, inizioMin - sv), titolo, testo(0, sv, true), true, true);
 }
+
+// il testo degli avvisi di un evento: "Comincia fra mezz'ora · Via Roma", "Domani, alle 15:00"
+const testoEvento = (quando, luogo, nota) => (g, m, sveglia) => {
+  const dove = luogo ? " · " + luogo : "";
+  if (sveglia) return (m ? `Comincia ${fraMinuti(m)}` : "Comincia adesso") + dove + ".";
+  if (m) return `Comincia ${fraMinuti(m)}${dove}.`;
+  return `${g === 0 ? "Oggi" : cap(fraLabel(g))}${quando ? ", " + quando : ""}${dove}${nota ? " · " + nota : ""}.`;
+};
 
 const cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;
 
@@ -8614,8 +9239,8 @@ const alle = (d, hhmm) => {
 function avvisiDaProgrammare(){
   const T = today(), ora = Date.now(), out = [];
   const limite = ora + 31 * 86400000;
-  const metti = (id, quando, titolo, testo, forte) => {
-    if (quando > ora + 60000 && quando < limite) out.push({ id, quando, titolo, testo, forte: !!forte });
+  const metti = (id, quando, titolo, testo, forte, sveglia) => {
+    if (quando > ora + 60000 && quando < limite) out.push({ id, quando, titolo, testo, forte: !!forte, sveglia: !!sveglia });
   };
 
   for (let i = 0; i < 14; i++){
@@ -8627,6 +9252,13 @@ function avvisiDaProgrammare(){
       let frasi = [];
       try { frasi = breveFrasi(d); } catch(e){}
       if (frasi.length) metti("giorno-" + d, alle(d, S.push.ora), "La giornata in breve", frasi.join(" "));
+    }
+
+    // le cose da fissare: una volta al giorno te le chiedo
+    if (S.push.fissare !== false && i < 2){
+      const fx = fxDaChiedere(d);
+      if (fx.length) metti("fx-" + d, alle(d, S.push.fissareOra || "09:00"), "Da fissare",
+        `Riesci a trovare un posto per ${elenco(fx.map(x => `«${x.titolo}»`))}? Ti propongo io ${fx.length === 1 ? "un orario" : "gli orari"}: apri Oggi.`);
     }
 
     // la revisione della settimana
@@ -8664,22 +9296,28 @@ function avvisiDaProgrammare(){
   for (const o of S.oneoffs){
     if ((o.endDate || o.date) < T) continue;
     const av = avvisoOf(o, "avviso", "evento");
-    const quando = o.allDay ? "tutto il giorno" : `alle ${o.start}`;
-    schedAvviso(metti, "ev-" + o.id, o.date, o.allDay ? { ...av, prima:0, giorni: av.giorni.length ? av.giorni : [0] } : av, o.label,
-      (g, prima) => prima ? `Fra ${durLabel(av.prima)}${o.place ? " · " + o.place : ""}.`
-                          : `${g === 0 ? "Oggi" : cap(fraLabel(g))}, ${quando}${o.place ? " · " + o.place : ""}.`,
-      true, o.allDay ? null : toMin(o.start));
+    schedAvviso(metti, "ev-" + o.id, o.date, o.allDay ? { ...av, prima: [], sveglia: null, giorni: av.giorni.length ? av.giorni : [0] } : av, o.label,
+      testoEvento(o.allDay ? "tutto il giorno" : `alle ${o.start}`, o.place, ""), true, o.allDay ? null : toMin(o.start));
   }
 
-  // eventi di Google a cui hai aggiunto un avviso
+  // impegni fissi scritti qui: due settimane di avvisi
+  for (let i = 0; i < 15; i++){
+    const d = addDays(T, i);
+    for (const f of S.fixed){
+      if (!f.days.includes(dow(d))) continue;
+      schedAvviso(metti, `fx-${f.id}-${d}`, d, avvisoOf(f, "avviso", "fisso"), f.label,
+        testoEvento(`alle ${f.start}`, "", ""), false, toMin(f.start));
+    }
+  }
+
+  // eventi e impegni di Google: gli avvisi di partenza, o quelli che hai scelto tu
   if (S.gcalOn) for (const g of GCAL.list){
+    if (g.date < T) continue;
+    if (g.recurring && g.date > addDays(T, 14)) continue;        // per quelli che si ripetono bastano due settimane
     const ex = gcxOf(g.key);
-    if (!ex.avviso || g.date < T) continue;
-    const av = avvisoOf(ex, "avviso", "evento");
-    schedAvviso(metti, `gc-${g.key}-${g.date}`, g.date, av, g.label,
-      (n, prima) => prima ? `Fra ${durLabel(av.prima)}${g.place ? " · " + g.place : ""}.`
-                          : `${n === 0 ? "Oggi" : cap(fraLabel(n))}${g.allDay ? "" : `, alle ${g.start}`}${ex.note ? " · " + ex.note : ""}.`,
-      ex.imp === 1, g.allDay ? null : g.s);
+    const av = avvisoOf(ex, "avviso", g.recurring ? "fisso" : "evento");
+    schedAvviso(metti, `gc-${g.key}-${g.date}`, g.date, g.allDay ? { ...av, prima: [], sveglia: null } : av, g.label,
+      testoEvento(g.allDay ? "" : `alle ${g.start}`, g.place, ex.note), ex.imp === 1, g.allDay ? null : g.s);
   }
 
   // uscite in arrivo
@@ -8724,7 +9362,7 @@ function avvisiDaProgrammare(){
       n => `${verso}: scade ${fraLabel(n)}.`, false);
   }
 
-  return out.sort((a,b) => a.quando - b.quando).slice(0, 150);
+  return out.sort((a,b) => a.quando - b.quando).slice(0, 300);
 }
 
 let PUSHTIMER = null;
@@ -8736,8 +9374,10 @@ function riprogrammaAvvisi(){
     try {
       NAT.annullaTutte();
       if (isPaused()) return;                       // se sei via, silenzio
-      for (const a of avvisiDaProgrammare())
-        NAT.programma(a.id, a.titolo, a.testo, a.quando, a.forte);
+      for (const a of avvisiDaProgrammare()){
+        if (a.sveglia && svegliaNativa()) NAT.programmaSveglia(a.id, a.titolo, a.testo, a.quando);
+        else NAT.programma(a.id, a.titolo, a.testo, a.quando, a.forte);
+      }
     } catch(e){}
   }, 1500);
 }
@@ -8752,6 +9392,17 @@ function svegliaTelefono(hhmm, etichetta){
 }
 
 // una notifica di prova fra dieci secondi, per vedere se il ponte regge
+// la sveglia fra dieci secondi: suona finché non la fermi
+function provaSveglia(){
+  if (!inApp()){ alert("La sveglia suona solo dentro l'app Android."); return; }
+  if (!svegliaNativa()){ serveAppNuova("Per la sveglia"); return; }
+  try {
+    NAT.programmaSveglia("prova-sv-" + Date.now(), "Prova della sveglia", "Se suona, le sveglie degli eventi funzionano.", Date.now() + 10000);
+    alert("Fatto. Fra dieci secondi suona: puoi anche bloccare il telefono, si accende da solo.");
+  } catch(e){ alert("Non ci riesco: " + e); }
+}
+const schermoInteroOk = () => { try { return NAT.puoSchermoIntero ? !!NAT.puoSchermoIntero() : true; } catch(e){ return true; } };
+
 function provaNotifica(){
   if (!inApp()){ alert("Le notifiche arrivano solo dentro l'app Android."); return; }
   try {
