@@ -504,7 +504,7 @@ let S = null;
 let TAB = "oggi";
 let DB = null;
 const LS_KEY = "coach.state.v1";
-const VERSIONE_APP = 28;
+const VERSIONE_APP = 29;
 
 async function loadState(){
   let local = null;
@@ -5647,7 +5647,7 @@ function natVersione(){ try { return String(NAT.versione() || ""); } catch(e){ r
 /* L'app Android non si aggiorna da sola come le pagine: quando ne esce una nuova
    che serve (dettatura, widget, sveglie…), lo dico in cima a Oggi finché non la installi.
    "Più tardi" la nasconde fino a domani. */
-const APP_NATIVA = "2.3";
+const APP_NATIVA = "2.4";
 const appDaAggiornare = () => inApp() && parseFloat(natVersione() || "0") < parseFloat(APP_NATIVA);
 function aggiornaAppHTML(){
   if (!appDaAggiornare() || S.appAggDopo === today()) return "";
@@ -5796,6 +5796,9 @@ window.dalTelefono = (cosa, valore) => {
   if (cosa === "azione"){
     if (!S){ window.__azione = valore; return; }
     if (valore === "aggiungi"){ document.querySelectorAll(".sheet").forEach(x => x.remove()); TAB = "oggi"; render(); openQuick(); }
+    // dalla mattina e dalla sera a schermo intero
+    if (valore === "breve"){ document.querySelectorAll(".sheet").forEach(x => x.remove()); TAB = "oggi"; render(); openBreve(); }
+    if (valore === "chiudi"){ document.querySelectorAll(".sheet").forEach(x => x.remove()); TAB = "oggi"; render(); openClose(); }
     return;
   }
   if (cosa === "calendario"){
@@ -6384,8 +6387,10 @@ function renderOpzioniSub(){
     ${inApp() ? `<div class="card">
       ${riga("Notifiche", S.push.on ? "Accese. Programmo il prossimo mese ogni volta che apri l'app." : "Spente: niente arriva sul telefono.", sino("op-push", S.push.on, "Accese", "Spente"))}
       ${riga("La giornata in breve", "Ogni mattina a quest'ora: impegni, cose da fare, da decidere e i soldi del giorno.", campoOra("op-pushora", S.push.ora))}
+      ${riga("A schermo intero", schermoNativo() ? "Accende lo schermo anche col telefono bloccato, con il tasto per aprire la giornata." : "Serve l'app Android 2.4: con questa arriva come notifica.", sino("op-schermomat", S.push.schermoMattino !== false))}
       ${riga("Le attività", "Un avviso all'inizio della loro fascia oraria.", sino("op-pushatt", S.push.attivita))}
       ${riga("La chiusura serale", `Alle ${S.closeAt}, l'ora scelta in La giornata.`, sino("op-pushsera", S.push.sera))}
+      ${S.push.sera ? riga("A schermo intero", schermoNativo() ? "Accende lo schermo con il tasto per chiudere la giornata, oppure fra mezz'ora." : "Serve l'app Android 2.4: con questa arriva come notifica.", sino("op-schermosera", S.push.schermoSera !== false)) : ""}
       ${riga("La revisione della settimana", `${GG[revConf().giorno]} alle ${revConf().ora}.`, sino("op-pushrev", S.push.revisione !== false))}
       ${riga("Le cose da fissare", "Una volta al giorno ti chiedo di trovare un posto a quelle senza data.", sino("op-pushfx", S.push.fissare !== false))}
       ${S.push.fissare !== false ? riga("A che ora", "", campoOra("op-pushfxora", S.push.fissareOra || "09:00")) : ""}
@@ -6594,6 +6599,8 @@ function bindOpzioni(){
   on("op-pushora", "onchange", e => { S.push.ora = e.target.value || "08:00"; save(); render(); });
   on("op-pushatt", "onclick", () => { S.push.attivita = !S.push.attivita; save(); render(); });
   on("op-pushsera", "onclick", () => { S.push.sera = !S.push.sera; save(); render(); });
+  on("op-schermomat", "onclick", () => { S.push.schermoMattino = S.push.schermoMattino === false; save(); render(); });
+  on("op-schermosera", "onclick", () => { S.push.schermoSera = S.push.schermoSera === false; save(); render(); });
   on("op-pushrev", "onclick", () => { S.push.revisione = S.push.revisione === false; save(); render(); });
   on("op-pushfx", "onclick", () => { S.push.fissare = S.push.fissare === false; save(); render(); });
   on("op-pushfxora", "onchange", e => { S.push.fissareOra = e.target.value || "09:00"; save(); });
@@ -8790,7 +8797,8 @@ function linkApk(){
 // cosa porta ogni versione dell'app Android: per dire cosa manca a chi ne ha una più vecchia
 const NOVITA_APP = [
   ["2.2", "la dettatura dal + e il widget per la schermata Home"],
-  ["2.3", "le sveglie degli eventi e il tasto per mettere su Google Calendar le cose da fissare"]
+  ["2.3", "le sveglie degli eventi e il tasto per mettere su Google Calendar le cose da fissare"],
+  ["2.4", "la giornata in breve e la chiusura serale a schermo intero"]
 ];
 const novitaDa = v => NOVITA_APP.filter(([x]) => parseFloat(x) > parseFloat(v || "0")).map(([, t]) => t);
 
@@ -9106,6 +9114,23 @@ const fraLabel = g => g === 0 ? "oggi" : g === 1 ? "domani" : g === 7 ? "fra una
 
 // la sveglia vera la fa suonare l'app Android dalla 2.3; prima arriva come notifica
 const svegliaNativa = () => inApp() && typeof NAT.programmaSveglia === "function";
+// mattina e sera a schermo intero: dalla 2.4
+const schermoNativo = () => inApp() && typeof NAT.programmaSchermo === "function";
+
+// la sera: com'è andata oggi (fino all'ultima volta che hai aperto Coach) e come comincia domani
+function seraTesto(d){
+  const righe = [];
+  if (d === today()){
+    const p = progress();
+    if (p.total) righe.push(p.done >= p.total ? `Oggi hai fatto tutto: ${p.total} su ${p.total}.`
+      : `Oggi ${p.done} su ${p.total}: ${p.total - p.done === 1 ? "resta una cosa" : `restano ${p.total - p.done} cose`}.`);
+  }
+  const dom = addDays(d, 1);
+  const primo = vociDelGiorno(dom).find(v => v.k !== "routine");
+  if (primo) righe.push(`Domani si comincia alle ${orario(primo.s)} con ${minuscola(primo.label)}.`);
+  righe.push("Due minuti per dire com'è andata e chiudere la giornata.");
+  return righe.join("\n");
+}
 
 // Il pezzo di modulo per scegliere gli avvisi. Si usa così:
 //   const p = avvisoPicker("id", avviso, { prima:true }); ... p.html ... p.bind(foglio); p.value()
@@ -9239,8 +9264,8 @@ const alle = (d, hhmm) => {
 function avvisiDaProgrammare(){
   const T = today(), ora = Date.now(), out = [];
   const limite = ora + 31 * 86400000;
-  const metti = (id, quando, titolo, testo, forte, sveglia) => {
-    if (quando > ora + 60000 && quando < limite) out.push({ id, quando, titolo, testo, forte: !!forte, sveglia: !!sveglia });
+  const metti = (id, quando, titolo, testo, forte, sveglia, schermo) => {
+    if (quando > ora + 60000 && quando < limite) out.push({ id, quando, titolo, testo, forte: !!forte, sveglia: !!sveglia, schermo: schermo || null });
   };
 
   for (let i = 0; i < 14; i++){
@@ -9251,7 +9276,8 @@ function avvisiDaProgrammare(){
     if (S.push.on){
       let frasi = [];
       try { frasi = breveFrasi(d); } catch(e){}
-      if (frasi.length) metti("giorno-" + d, alle(d, S.push.ora), "La giornata in breve", frasi.join(" "));
+      if (frasi.length) metti("giorno-" + d, alle(d, S.push.ora), "La giornata in breve", frasi.join("\n"), false, false,
+        S.push.schermoMattino !== false ? "mattino" : null);
     }
 
     // le cose da fissare: una volta al giorno te le chiedo
@@ -9273,7 +9299,8 @@ function avvisiDaProgrammare(){
 
     // la chiusura serale
     if (S.push.sera && !S.closes[d])
-      metti("chiusura-" + d, alle(d, S.closeAt || "21:00"), "Chiudi la giornata", "Due minuti per dire com'è andata.");
+      metti("chiusura-" + d, alle(d, S.closeAt || "21:00"), "Chiudi la giornata", seraTesto(d), false, false,
+        S.push.schermoSera !== false ? "sera" : null);
 
     // la spesa
     if (shopDay(d) && shopLeft())
@@ -9375,8 +9402,9 @@ function riprogrammaAvvisi(){
       NAT.annullaTutte();
       if (isPaused()) return;                       // se sei via, silenzio
       for (const a of avvisiDaProgrammare()){
-        if (a.sveglia && svegliaNativa()) NAT.programmaSveglia(a.id, a.titolo, a.testo, a.quando);
-        else NAT.programma(a.id, a.titolo, a.testo, a.quando, a.forte);
+        if (a.schermo && schermoNativo()) NAT.programmaSchermo(a.id, a.titolo, a.testo, a.quando, a.schermo);
+        else if (a.sveglia && svegliaNativa()) NAT.programmaSveglia(a.id, a.titolo, a.testo, a.quando);
+        else NAT.programma(a.id, a.titolo, a.testo, a.quando, a.forte || !!a.schermo);
       }
     } catch(e){}
   }, 1500);
