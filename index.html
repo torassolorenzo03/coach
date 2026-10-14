@@ -55,7 +55,7 @@ body{
   -webkit-font-smoothing:antialiased;
   padding-bottom:88px;
 }
-button,input,select{font-family:inherit;font-size:inherit;color:inherit}
+button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit}
 button{cursor:pointer}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
@@ -268,6 +268,7 @@ nav{position:fixed;left:0;right:0;bottom:0;background:color-mix(in srgb,var(--bg
 .segline{display:flex;gap:9px;align-items:center;margin-bottom:9px}
 .segline select{flex:1.2}
 .segline input{flex:1}
+.segline input[type=number],.segline input[type=text]{min-width:0;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink)}
 .segline button{border:1px solid var(--line);background:var(--surface);border-radius:9px;
   width:42px;height:42px;flex:0 0 42px;color:var(--warn);font-size:19px;line-height:1;padding:0}
 /* i bottoni con una parola dentro (Aggiungi, Segna, Sposta lì) non devono restare quadratini */
@@ -378,6 +379,7 @@ const addDays = (s,n) => { const d = fromIso(s); d.setDate(d.getDate()+n); retur
 const daysBetween = (a,b) => Math.round((fromIso(b)-fromIso(a))/86400000);
 const dow = s => fromIso(s).getDay();
 const toMin = t => { const [h,m] = t.split(":").map(Number); return h*60+m; };
+const oraValida = t => /^\d{1,2}:\d{2}$/.test(t || "") && toMin(t) < 1440;
 const toHHMM = m => `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
 const today = () => iso(new Date());
 const nowMin = () => { const d = new Date(); return d.getHours()*60+d.getMinutes(); };
@@ -523,7 +525,7 @@ let S = null;
 let TAB = "oggi";
 let DB = null;
 const LS_KEY = "coach.state.v1";
-const VERSIONE_APP = 30;
+const VERSIONE_APP = 31;
 
 async function loadState(){
   let local = null;
@@ -688,6 +690,12 @@ function migrate(){
       S.layout.oggi.splice(i + 1, 0, { id: "segretaria", on: true });
     }
     S.v30 = true;
+  }
+  if (!S.v31){
+    // "Notifiche spente" fermava solo la giornata in breve: adesso le ferma tutte. Chi l'aveva
+    // spenta continua ad avere quello che aveva (tutto tranne il mattino), con l'interruttore giusto.
+    if (S.push && S.push.on === false){ S.push.on = true; S.push.mattino = false; }
+    S.v31 = true;
   }
 }
 
@@ -1266,6 +1274,10 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":
 // dove sei, la pagina non deve saltare sotto le dita.
 let LAST_TAB = null;
 function render(){
+  // un campo ancora attivo (un orario appena scelto) si lascia prima di ridisegnare: se sparisse
+  // mentre è attivo, il browser manderebbe un altro "change" a metà del ridisegno, e si rompe tutto
+  const att = document.activeElement;
+  if (att && att !== document.body && el.contains(att)){ try { att.blur(); } catch(e){} }
   const keep = LAST_TAB === TAB;
   const y = keep ? (window.scrollY || 0) : 0;
   if (TAB === "programma" || TAB === "attivita") TAB = "base";   // i vecchi nomi portano qui
@@ -1951,7 +1963,7 @@ const REV_DEF = { on: true, giorno: 0, ora: "20:00" };
 
 function revConf(){
   const r = S.review || {};
-  return { ...REV_DEF, ...r, domande: (r.domande && r.domande.length) ? r.domande : REV_DOMANDE_DEF };
+  return { ...REV_DEF, ...r, domande: Array.isArray(r.domande) ? r.domande : REV_DOMANDE_DEF };
 }
 // il giorno della revisione che riguarda la data d: l'ultimo "giorno scelto" fino a d compreso
 function revGiornoDi(d){
@@ -5381,6 +5393,7 @@ function openForm(id){
   function consiglia(){
     const b = bozza();
     const win = b.win, dur = b.dur;
+    if (!oraValida(win.start) || !oraValida(win.end)){ adv.innerHTML = `<div class="rmeta" style="color:var(--warn)">Manca un orario della fascia.</div>`; return; }
     if (toMin(win.end) <= toMin(win.start)){ adv.innerHTML = `<div class="rmeta" style="color:var(--warn)">La fascia oraria finisce prima di iniziare.</div>`; return; }
     if (toMin(win.end) - toMin(win.start) < dur){ adv.innerHTML = `<div class="rmeta" style="color:var(--warn)">La fascia ${win.start}–${win.end} è più corta della durata (${durLabel(dur)}).</div>`; return; }
     const t = b.rec.type;
@@ -5460,6 +5473,7 @@ function openForm(id){
     if (tipo === "weekly" && !daySel.size){ alert("Scegli almeno un giorno."); return; }
     if (tipo === "dates" && !dateList.length){ alert("Aggiungi almeno una data."); return; }
     if (tipo === "yearly" && !b.rec.md){ alert("Scegli il giorno."); return; }
+    if (!oraValida(b.win.start) || !oraValida(b.win.end)){ alert("Manca un orario della fascia."); return; }
     if (toMin(b.win.end) <= toMin(b.win.start)){ alert("La fascia oraria finisce prima di iniziare."); return; }
 
     // se cambi le regole di un'attività che esiste già, il passato resta com'era:
@@ -6478,7 +6492,7 @@ const AVV_NOMI = {
 
 function opzVoci(){
   const sm = `sveglia ${S.wake} · ${String(S.sleepH).replace(".", ",")} ore di sonno · chiusura ${S.closeAt}`;
-  const notif = inApp() ? (S.push.on ? `accese · giornata in breve alle ${S.push.ora}` : "spente") : "arrivano solo nell'app Android";
+  const notif = inApp() ? (S.push.on ? (S.push.mattino !== false ? `accese · giornata in breve alle ${S.push.ora}` : "accese") : "spente") : "arrivano solo nell'app Android";
   const gc = !S.gcalOn ? "spento" : GCAL.status === "ok" ? `acceso · ${Object.keys(GCAL.series).length} cose lette` : GCAL.status === "permesso" ? "manca il permesso" : GCAL.status === "browser" ? "solo nell'app Android" : GCAL.status === "vecchia" ? "serve l'app nuova" : "acceso";
   const pausa = isPaused() ? `in pausa dal ${prettyDate(S.pause.from)}` : "attivo";
   const sync = syncPronto() ? `collegata a ${S.sync.repo}` : "spenta";
@@ -6565,8 +6579,9 @@ function renderOpzioniSub(){
     corpo = `
     ${inApp() ? `<div class="card">
       ${riga("Notifiche", S.push.on ? "Accese. Programmo il prossimo mese ogni volta che apri l'app." : "Spente: niente arriva sul telefono.", sino("op-push", S.push.on, "Accese", "Spente"))}
-      ${riga("La giornata in breve", "Ogni mattina a quest'ora: impegni, cose da fare, da decidere e i soldi del giorno.", campoOra("op-pushora", S.push.ora))}
-      ${riga("A schermo intero", schermoNativo() ? "Accende lo schermo anche col telefono bloccato, con il tasto per aprire la giornata." : "Serve l'app Android 2.4: con questa arriva come notifica.", sino("op-schermomat", S.push.schermoMattino !== false))}
+      ${riga("La giornata in breve", "Ogni mattina: impegni, cose da fare, da decidere e i soldi del giorno.", sino("op-pushmat", S.push.mattino !== false))}
+      ${S.push.mattino !== false ? riga("A che ora", "", campoOra("op-pushora", S.push.ora)) : ""}
+      ${S.push.mattino !== false ? riga("A schermo intero", schermoNativo() ? "Accende lo schermo anche col telefono bloccato, con il tasto per aprire la giornata." : "Serve l'app Android 2.4: con questa arriva come notifica.", sino("op-schermomat", S.push.schermoMattino !== false)) : ""}
       ${riga("Le attività", "Un avviso all'inizio della loro fascia oraria.", sino("op-pushatt", S.push.attivita))}
       ${riga("La chiusura serale", `Alle ${S.closeAt}, l'ora scelta in La giornata.`, sino("op-pushsera", S.push.sera))}
       ${S.push.sera ? riga("A schermo intero", schermoNativo() ? "Accende lo schermo con il tasto per chiudere la giornata, oppure fra mezz'ora." : "Serve l'app Android 2.4: con questa arriva come notifica.", sino("op-schermosera", S.push.schermoSera !== false)) : ""}
@@ -6736,7 +6751,9 @@ function renderOpzioniSub(){
     </div>
     <h2>Le domande</h2>
     <div class="card">
-      ${riga("Quando arrivano", `Alle ${S.push.fissareOra || "09:00"}${S.push.pomeriggio !== false ? `, e alle ${S.push.pomeriggioOra || "15:00"} se c'è qualcosa di urgente` : ""}. Si cambia in Notifiche e avvisi.`, "")}
+      ${riga("Quando arrivano", S.push.on === false ? "Le notifiche sono spente: si accendono in Notifiche e avvisi. Le domande le trovi comunque in Oggi."
+        : S.push.fissare === false ? "Come notifica no: le hai spente in Notifiche e avvisi. Le trovi comunque in Oggi."
+        : `Alle ${S.push.fissareOra || "09:00"}${S.push.pomeriggio !== false ? `, e alle ${S.push.pomeriggioOra || "15:00"} se c'è qualcosa di urgente` : ""}. Si cambia in Notifiche e avvisi.`, "")}
       ${riga("A schermo intero", schermoAz() ? "Le domande del mattino accendono lo schermo, con il tasto per rispondere." : "Serve l'app Android 2.5: con questa arrivano come notifica.", sino("sg-schermo", !!sg.schermoDomande))}
     </div>
     <h2>Quello che sa di te</h2>
@@ -6803,6 +6820,7 @@ function bindOpzioni(){
 
   // notifiche
   on("op-push", "onclick", () => { S.push.on = !S.push.on; save(); render(); });
+  on("op-pushmat", "onclick", () => { S.push.mattino = S.push.mattino === false; save(); render(); });
   on("op-pushora", "onchange", e => { S.push.ora = e.target.value || "08:00"; save(); render(); });
   on("op-pushatt", "onclick", () => { S.push.attivita = !S.push.attivita; save(); render(); });
   on("op-pushsera", "onclick", () => { S.push.sera = !S.push.sera; save(); render(); });
@@ -6860,10 +6878,14 @@ function bindOpzioni(){
   on("op-export", "onclick", () => esportaBackup());
   on("op-import", "onclick", () => importaBackup());
   on("op-sync", "onclick", () => {
-    S.sync.repo = q("op-repo").value.trim().replace(/^https?:\/\/github\.com\//, "").replace(/\.git$/, "");
+    const repo = q("op-repo").value.trim().replace(/^https?:\/\/github\.com\//, "").replace(/\.git$/, "").replace(/\/+$/, "");
+    // la prima volta che questo dispositivo si collega a quel deposito, prima di mandare qualcosa chiedo da che parte stare
+    if (!S.sync.last || S.sync.repo !== repo) S.sync.daDecidere = true;
+    S.sync.repo = repo;
     S.sync.token = q("op-token").value.trim();
     S.sync.sha = null;
-    save();
+    salvaSolo();          // non è una modifica dei tuoi dati: non deve passare davanti a quelli del deposito
+    render();
     sincronizza();
   });
   on("op-syncauto", "onclick", () => { S.sync.auto = !S.sync.auto; save(); render(); });
@@ -7055,6 +7077,7 @@ function openOneoff(id){
     if (!label){ alert("Serve un nome."); return; }
     if (!date){ alert("Serve un giorno."); return; }
     if (fine < date) fine = date;
+    if (!allDay && (!oraValida(s) || !oraValida(e))){ alert("Manca l'orario: mettilo, oppure scegli tutto il giorno."); return; }
     if (!allDay && fine === date && toMin(e) <= toMin(s)){ alert("L'orario finisce prima di iniziare."); return; }
     const next = { ...o, label, date, endDate: fine, start:s, end:e, allDay,
                    busy: allDay ? false : busyO,
@@ -7160,7 +7183,8 @@ function openFixed(id){
   w.querySelector("#x-save").onclick = () => {
     const s = w.querySelector("#x-s").value, e = w.querySelector("#x-e").value;
     if (!daySel.size){ alert("Scegli almeno un giorno."); return; }
-    if (toMin(e) <= toMin(s)){ alert("L'orario finisce prima di iniziare."); return; }
+    if (!oraValida(s) || !oraValida(e)){ alert("Manca l'orario."); return; }
+    if (toMin(e) <= toMin(s)){ alert("L'orario finisce prima di iniziare. Un turno che passa la mezzanotte va diviso in due impegni."); return; }
     const next = { ...f, label: w.querySelector("#x-label").value.trim() || "Impegno",
                    days:[...daySel].sort(), start:s, end:e, showInMonth: showM };
     const avS = avvisoDaSalvare(pAv.value(), "fisso", true);
@@ -11960,7 +11984,7 @@ function avvisiDaProgrammare(){
     const acts = planFor(d);
 
     // il riassunto del mattino: la giornata in breve, la stessa che trovi in Oggi
-    if (S.push.on){
+    if (S.push.mattino !== false){
       let frasi = [];
       try { frasi = breveFrasi(d); } catch(e){}
       // il lunedì (se scegli così) la mattina si apre con la settimana da pianificare
@@ -12128,6 +12152,7 @@ function riprogrammaAvvisi(){
     try {
       NAT.annullaTutte();
       if (isPaused()) return;                       // se sei via, silenzio
+      if (S.push.on === false) return;              // notifiche spente: niente di niente
       for (const a of avvisiDaProgrammare()){
         if (a.schermo && schermoNativo()) NAT.programmaSchermo(a.id, a.titolo, a.testo, a.quando, a.schermo);
         else if (a.sveglia && svegliaNativa()) NAT.programmaSveglia(a.id, a.titolo, a.testo, a.quando);
@@ -12176,7 +12201,7 @@ function timerTelefono(minuti, etichetta){
    BACKUP — un file con dentro tutto, da tenere da parte
    ============================================================ */
 function esportaBackup(){
-  const dati = JSON.stringify(S);
+  const dati = statoSenzaToken();
   const w = document.createElement("div");
   w.className = "sheet";
   w.innerHTML = `
@@ -12291,6 +12316,8 @@ let SYNCSTATO = "fermo";
 let SYNCTIMER = null;
 
 const syncPronto = () => !!(S.sync && S.sync.repo && S.sync.token);
+// il token non esce mai dal dispositivo: né nel file sincronizzato né nei backup
+const statoSenzaToken = () => JSON.stringify({ ...S, sync: { ...(S.sync || {}), token: "" } });
 
 function b64(testo){
   const byte = new TextEncoder().encode(testo);
@@ -12330,14 +12357,15 @@ async function syncScarica(){
 async function syncCarica(messaggio){
   const corpo = {
     message: messaggio || ("coach " + new Date().toISOString()),
-    content: b64(JSON.stringify(S))
+    content: b64(statoSenzaToken())
   };
   if (S.sync.sha) corpo.sha = S.sync.sha;
   let r = await ghChiama("PUT", corpo);
   if (r.status === 409 || r.status === 422){          // qualcuno ha scritto prima di noi
     const giu = await syncScarica();
     if (!giu.vuoto && (giu.dati.updatedAt || 0) > (S.updatedAt || 0)){
-      S = giu.dati; migrate(); applyTheme(); runEngine(); render();
+      const sync = { ...S.sync };                     // il collegamento (e il token) restano quelli di questo dispositivo
+      S = giu.dati; migrate(); S.sync = sync; applyTheme(); runEngine(); render();
       return "preso";
     }
     corpo.sha = S.sync.sha;
@@ -12351,6 +12379,7 @@ async function syncCarica(messaggio){
 
 async function sincronizza(forzaInvio){
   if (!syncPronto() || SYNCSTATO === "in corso") return;
+  if (S.sync.daDecidere) return primoCollegamento();
   SYNCSTATO = "in corso";
   if (TAB === "opzioni") render();
   try {
@@ -12361,7 +12390,7 @@ async function sincronizza(forzaInvio){
       S.sync = sync; S.sync.sha = sha;
       applyTheme(); runEngine();
       S.sync.last = Date.now();
-      salvaSolo();
+      salvaSolo(); riprogrammaAvvisi();
       SYNCSTATO = "preso";
       render();
       return;
@@ -12374,6 +12403,43 @@ async function sincronizza(forzaInvio){
     SYNCSTATO = "errore: " + (e && e.message ? e.message : e);
   }
   if (TAB === "opzioni") render();
+}
+
+/* Il primo collegamento di questo dispositivo al deposito. Un telefono nuovo ha solo le cose
+   di partenza, ma risulta "modificato adesso": senza chiedere coprirebbe i dati veri del deposito. */
+async function primoCollegamento(){
+  if (document.getElementById("pc-foglio")) return;          // la domanda è già aperta
+  SYNCSTATO = "in corso"; if (TAB === "opzioni") render();
+  let giu;
+  try { giu = await syncScarica(); }
+  catch(e){ SYNCSTATO = "errore: " + (e && e.message ? e.message : e); if (TAB === "opzioni") render(); return; }
+  SYNCSTATO = "fermo";
+  if (giu.vuoto){ S.sync.daDecidere = false; salvaSolo(); return sincronizza(true); }   // deposito vuoto: ci vanno i dati di qui
+  const quando = giu.dati.updatedAt ? new Date(giu.dati.updatedAt).toLocaleString("it-IT", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }) : "";
+  const w = document.createElement("div");
+  w.className = "sheet"; w.id = "pc-foglio";
+  w.innerHTML = `<div class="sheetin">
+    <h3>Nel deposito ci sono già dei dati</h3>
+    <div class="hint" style="margin-bottom:14px">${quando ? `L'ultima modifica è del ${esc(quando)}. ` : ""}Di solito si prendono quelli: questo dispositivo diventa uguale agli altri. Se invece tieni quelli di qui, vanno nel deposito al posto di quelli che ci sono.</div>
+    <div class="btnrow"><button class="btn primary wide" id="pc-prendi">Prendi quelli del deposito</button></div>
+    <div class="btnrow"><button class="btn wide" id="pc-tieni">Tieni quelli di questo dispositivo</button></div>
+    <div style="height:30px"></div></div>`;
+  document.body.appendChild(w);
+  if (TAB === "opzioni") render();
+  w.querySelector("#pc-prendi").onclick = () => {
+    w.remove();
+    const sync = { ...S.sync, daDecidere: false, sha: giu.sha, last: Date.now() };
+    S = giu.dati; migrate(); S.sync = sync;
+    applyTheme(); runEngine(); salvaSolo(); riprogrammaAvvisi();
+    SYNCSTATO = "preso"; render();
+    toast("Fatto: qui ci sono i dati del deposito.");
+  };
+  w.querySelector("#pc-tieni").onclick = () => {
+    if (!confirm("Quelli del deposito vengono sostituiti da quelli di questo dispositivo. Vado avanti?")) return;
+    w.remove();
+    S.sync.daDecidere = false; salvaSolo();
+    sincronizza(true);
+  };
 }
 
 // salva senza far ripartire il giro della sincronizzazione
