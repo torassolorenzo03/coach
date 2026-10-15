@@ -6546,7 +6546,7 @@ function renderOpzioniSub(){
     const sm = sonnoMedio();
     corpo = `
     <div class="card">
-      ${riga("Ti svegli alle", "Da qui parte la giornata sulla barra di Oggi.", campoOra("op-wake", S.wake))}
+      ${riga("Ti svegli alle", "Da quest'ora comincia la tua giornata: il tempo libero si conta da qui.", campoOra("op-wake", S.wake))}
       ${riga("Ore di sonno", "Il resto è il tempo in cui il coach ragiona sui tuoi giorni liberi.", campoNum("op-sleep", S.sleepH, 3, 14, 0.5))}
       ${riga("", `Sveglio dalle ${toHHMM(awakeFrom())} alle ${toHHMM(Math.min(1439, awakeTo()))}<span class="dot">·</span>${durLabel(awakeTo() - awakeFrom())} al giorno`, "")}
     </div>
@@ -6565,7 +6565,7 @@ function renderOpzioniSub(){
 
     <h2>Chiusura serale</h2>
     <div class="card">
-      ${riga("A che ora chiedertelo", "Da quest'ora fino alle 3 di notte compare il pulsante per chiudere la giornata.", campoOra("closeat", S.closeAt))}
+      ${riga("A che ora chiedertelo", "A quest'ora ti chiedo di chiudere la giornata. Chiudi, in alto in Oggi, c'è sempre: fino alle 3 di notte vale per il giorno appena finito.", campoOra("closeat", S.closeAt))}
     </div>
 
     ${inApp() ? `<h2>Sveglia del telefono</h2>
@@ -6588,7 +6588,7 @@ function renderOpzioniSub(){
       ${riga("La revisione della settimana", `${GG[revConf().giorno]} alle ${revConf().ora}.`, sino("op-pushrev", S.push.revisione !== false))}
       ${riga("Le domande della segretaria", "La mattina ti dico cosa deve chiederti: incontri da pianificare, cose da fissare, quello che aspetti e quello che scade.", sino("op-pushfx", S.push.fissare !== false))}
       ${S.push.fissare !== false ? riga("A che ora", "", campoOra("op-pushfxora", S.push.fissareOra || "09:00")) : ""}
-      ${S.push.fissare !== false ? riga("Anche il pomeriggio", "Se c'è qualcosa per oggi o domani ancora da decidere.", sino("op-pushpom", S.push.pomeriggio !== false)) : ""}
+      ${S.push.fissare !== false ? riga("Anche il pomeriggio", "Se c'è da decidere qualcosa per oggi, domani o dopodomani.", sino("op-pushpom", S.push.pomeriggio !== false)) : ""}
       ${S.push.fissare !== false && S.push.pomeriggio !== false ? riga("A che ora", "", campoOra("op-pushpomora", S.push.pomeriggioOra || "15:00")) : ""}
       ${riga("Orari esatti", "Senza questo permesso Android può far scivolare le notifiche di qualche minuto.", `<button class="btn" id="op-esatte" style="flex:0 0 auto">Apri</button>`)}
       ${svegliaNativa() && !schermoInteroOk() ? riga("Sveglie a schermo intero", "Senza questo permesso la sveglia suona lo stesso, ma non si accende lo schermo.", `<button class="btn" id="op-schermo" style="flex:0 0 auto">Apri</button>`) : ""}
