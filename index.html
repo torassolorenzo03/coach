@@ -200,7 +200,7 @@ nav{position:fixed;left:0;right:0;bottom:0;background:color-mix(in srgb,var(--bg
 /* ---- form ---- */
 .field{margin-bottom:15px}
 .field label{display:block;font-size:12.5px;color:var(--ink-soft);margin-bottom:6px}
-.field input[type=text],.field input[type=number],.field input[type=time],.field select{
+.field input[type=text],.field input[type=number],.field input[type=time],.field input[type=password],.field input[type=email],.field input[type=tel],.field input[type=date],.field select{
   width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
 .chips{display:flex;flex-wrap:wrap;gap:7px}
 .chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:8px 13px;font-size:13.5px;min-width:46px;text-align:center}
@@ -2143,8 +2143,8 @@ function revImpostazioniHTML(){
   const c = revConf();
   return `
   <div class="card">
-    <div class="row" style="align-items:center"><div class="rbody"><div class="rtitle">Revisione della settimana</div>
-      <div class="rmeta">${c.on ? "Accesa" : "Spenta"}</div></div>
+    <div class="row" style="align-items:center"><div class="rbody"><div class="rtitle">Ogni settimana</div>
+      <div class="rmeta">${c.on ? "Nel giorno e all'ora qui sotto compare in Oggi." : "Spenta: non compare in Oggi e non arriva la notifica."}</div></div>
       <button class="btn ${c.on ? "primary" : ""}" id="rv-on" style="flex:0 0 auto">${c.on ? "Accesa" : "Spenta"}</button></div>
     <div class="row" style="display:block"><div class="rtitle" style="margin-bottom:9px">Che giorno</div>
       <div class="chips">${[1,2,3,4,5,6,0].map(g => `<button class="chip${c.giorno === g ? " on" : ""}" data-rvg="${g}">${GG3[g]}</button>`).join("")}</div></div>
@@ -2284,7 +2284,7 @@ function baseVoci(){
 
   return [
     { id:"attivita", ico:"attivita", nome:"Attività", hot: attRestano > 0,
-      nota: attRestano ? `${attRestano} da fare oggi` : S.activities.length ? `${S.activities.length} ricorrenti · oggi a posto` : "nessuna ancora" },
+      nota: attRestano ? `${attRestano} da fare oggi` : S.activities.length ? `${S.activities.length} ${S.activities.length === 1 ? "ricorrente" : "ricorrenti"} · oggi a posto` : "nessuna ancora" },
     { id:"routine", ico:"routine", nome:"Routine", hot: rRestano > 0,
       nota: rRestano ? `${esc(cur.name)}: ${rRestano} da spuntare` : `${S.routines.length} fasce · ${rvoci} ${rvoci === 1 ? "voce" : "voci"}` },
     { id:"spesa", ico:"spesa", nome:"Spesa", hot: shopDay(T) && shopLeft() > 0,
@@ -12527,5 +12527,3 @@ document.addEventListener("visibilitychange", () => {
 </script>
 </body>
 </html>
-
-</body></html>
