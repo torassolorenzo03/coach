@@ -8752,6 +8752,13 @@ function fxAbbina(){
     const g = GCAL.list.find(c => c.id === String(x.fissato.idLocale));
     if (g && g.key.startsWith("g:")){ x.fissato.key = g.key; fxCollega(x, g.key); cambiato = true; }
   }
+  // scritte da qui senza che Google abbia detto il loro codice: le riconosco dal nome e dall'orario
+  for (const x of fxTutti()){
+    const f = x.fissato;
+    if (x.stato !== "fissato" || !f || f.key || f.idLocale || !f.d || typeof f.s !== "number") continue;
+    const g = GCAL.list.find(c => !c.recurring && c.date === f.d && Math.abs(c.s - f.s) <= 15 && fxNorm(c.label) === fxNorm(x.titolo));
+    if (g){ f.key = g.key; fxCollega(x, g.key); cambiato = true; }
+  }
   if (!fxInAttesa().length){ if (cambiato) save(); return; }
   const T = today(), fissati = [];
   for (const x of fxInAttesa()){
