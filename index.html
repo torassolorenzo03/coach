@@ -380,6 +380,8 @@ button.qtipo{cursor:pointer}
 .cvio{align-self:flex-end;max-width:86%;background:var(--accent);color:var(--accent-ink);border-radius:16px 16px 4px 16px;padding:9px 13px;font-size:15px;line-height:1.45;white-space:pre-line}
 .cvlei{align-self:flex-start;max-width:92%;background:var(--surface-2);border-radius:16px 16px 16px 4px;padding:10px 13px;font-size:15px;line-height:1.5;white-space:pre-line}
 .cvlei.err{border:1px solid var(--warn)}
+.cvgiorno{align-self:center;font-size:11.5px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.06em;margin:4px 0}
+.cvprima{background:none;border:0;padding:4px 2px;font:inherit;font-size:13px;color:var(--ink-soft);text-decoration:underline;cursor:pointer}
 .cvleggi{display:block;margin-top:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:6px 12px;font-size:13px;font-family:inherit;cursor:pointer}
 .cvaz{margin:2px 0 4px;align-self:stretch}
 .cvriga.off .rtitle,.cvriga.off .rmeta{opacity:.45;text-decoration:line-through}
@@ -402,6 +404,18 @@ h2 .hsub{margin-left:6px;font-weight:400}
 .gdpezzo .gdimg{width:72px;height:72px}
 .gdpezzo .rmeta{font-size:11.5px;line-height:1.25;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .gdcard{margin-top:6px}
+.gdlooks{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.gdlook{display:flex;flex-direction:column;gap:4px;text-align:left;border:1px solid var(--line);background:var(--surface);border-radius:var(--radius);padding:8px;font-family:inherit;color:inherit;cursor:pointer;min-width:0}
+.gdlookimg{width:100%;height:auto;border-radius:10px;display:block;background:var(--surface-2);color:transparent;font-size:0}
+.gdfoto img.gdlookimg{max-height:460px;width:auto}
+.gdlookgriglia{display:grid;grid-template-columns:1fr 1fr;gap:6px;width:100%}
+.gdlookgriglia .gdpezzo{flex:none;min-width:0}
+.gdlookgriglia .gdimg{width:100%;height:auto;aspect-ratio:1/1}
+.gdscegli{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px}
+.gdsc{display:flex;flex-direction:column;gap:4px;align-items:stretch;border:1.5px solid var(--line);background:var(--surface);border-radius:12px;padding:6px;font:inherit;font-size:12px;color:inherit;text-align:left;cursor:pointer;min-width:0}
+.gdsc .gdimg{width:100%;height:auto;aspect-ratio:1/1}
+.gdsc.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.gdsc span{overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.25}
 .avvpag{position:fixed;left:12px;right:12px;bottom:calc(84px + env(safe-area-inset-bottom));z-index:90;background:var(--ink);color:var(--bg);border-radius:14px;
   padding:12px 12px 12px 15px;display:flex;gap:12px;align-items:center;box-shadow:0 6px 24px rgba(0,0,0,.25);font-size:14.5px;line-height:1.45}
 .avvpag .avvt{flex:1;white-space:pre-line}
@@ -590,7 +604,7 @@ function applyTheme(){
 let S = null;
 let TAB = "oggi";
 const LS_KEY = "coach.state.v1";
-const VERSIONE_APP = 33;
+const VERSIONE_APP = 34;
 
 async function loadState(){
   let local = null;
@@ -745,7 +759,11 @@ function migrate(){
   }
   // versione 32: la segretaria in prima pagina
   if (!S.piano) S.piano = {};
-  if (!S.claude || S.claude.modello) S.claude = { on: true, tier: "quick" };
+  if (!S.claude || S.claude.modello) S.claude = { on: true, tier: "auto" };
+  // versione 34: la scelta automatica (veloce per gli ordini, la più intelligente per domande e consigli)
+  if (!S.claude.v34){ S.claude.tier = "auto"; S.claude.v34 = true; }
+  if (!["auto", "quick", "max"].includes(S.claude.tier)) S.claude.tier = "auto";
+  if (!Array.isArray(S.memoria)) S.memoria = [];
   if (!S.progetti) S.progetti = [];
   if (!S.punto) S.punto = {};
   if (!S.guardaroba) S.guardaroba = { capi: [], abbinamenti: [], stile: "Classico, con i colori abbinati bene. Non per forza all'ultima moda." };
@@ -2300,6 +2318,7 @@ function openRevisioneVista(g){
    senza saltare da una parte all'altra.
    ============================================================ */
 let PROGSUB = null;
+let PROG_DA = null;          // "oggi" quando la pagina si apre dalla segretaria
 
 const ICO = {
   attivita: `<path d="M4 7h16M4 12h16M4 17h10"/>`,
@@ -2538,7 +2557,7 @@ function renderIo(){
 
 function baseTitolo(nome, sotto){
   return `<header><div class="h-left">
-    <button class="btn ghost" id="progback" style="padding:6px 12px;font-size:13px;margin-bottom:10px">&larr; Archivio</button>
+    <button class="btn ghost" id="progback" style="padding:6px 12px;font-size:13px;margin-bottom:10px">&larr; ${PROG_DA === "oggi" ? "Segretaria" : "Archivio"}</button>
     <div class="datebig">${nome}</div>
     <div class="greet">${sotto}</div>
   </div></header>`;
@@ -2599,7 +2618,7 @@ function renderBaseSub(){
     corpo = attesePaginaHTML(T);
   }
   else if (v === "persone"){
-    nome = "Persone"; sotto = "Le persone che contano: come contattarle, i compleanni, ogni quanto sentirle e cosa dirgli.";
+    nome = "Persone"; sotto = "Le persone che contano: come contattarle, i compleanni, ogni quanto sentirle e i promemoria da ricordare quando le vedi.";
     corpo = personePaginaHTML(T);
   }
   else if (v === "riunioni"){
@@ -3200,7 +3219,7 @@ function bindAll(){
   if (lgA) lgA.onchange = e => { segrMetti({ anticipo: Math.max(0, Math.min(60, Math.round(+e.target.value || 0))) }); save(); render(); };
   one("lg-partenze", () => { segrMetti({ partenze: !segr().partenze }); save(); render(); });
   one("lg-occupa", () => { segrMetti({ viaggioOccupa: !segr().viaggioOccupa }); save(); render(); });
-  one("progback", () => { PROGSUB = null; render(); });
+  one("progback", () => { PROGSUB = null; if (PROG_DA === "oggi"){ PROG_DA = null; TAB = "oggi"; } render(); });
   one("add", () => openForm(null));
   one("addr", () => openRoutine(null));
   one("addf", () => openFixed(null));
@@ -6605,7 +6624,7 @@ function opzVoci(){
     { id:"riquadri", nome:"Riquadri della giornata e dell'Archivio", nota: `${accesi} riquadri accesi nella giornata · giornata in breve ${b.on ? `${b.dalle}–${b.alle}` : "spenta"}` },
     { id:"revisione", nome:"Revisione della settimana", nota: rc.on ? `${GG[rc.giorno].toLowerCase()} alle ${rc.ora} · ${rc.domande.length} domande` : "spenta" },
     { id:"segretaria", nome:"La segretaria", nota: `${{ lunedi: "settimana il lunedì mattina", domenica: "settimana la domenica sera", no: "settimana quando vuoi" }[segr().settimana] || ""} · anticipo ${segr().anticipo} min · ${(S.regole || []).length} ${(S.regole || []).length === 1 ? "regola" : "regole"}` },
-    { id:"claude", nome:"Claude", nota: !IN_CLAUDE ? "c'è aprendo Coach dentro Claude" : claudeConf().on === false ? "spento: la segretaria usa le sue regole" : CLAUDE_NO ? "manca il permesso" : `acceso · risposte ${claudeConf().tier === "default" ? "più ragionate" : "veloci"}` },
+    { id:"claude", nome:"Claude", nota: !IN_CLAUDE ? "c'è aprendo Coach dentro Claude" : claudeConf().on === false ? "spento: la segretaria usa le sue regole" : CLAUDE_NO ? "manca il permesso" : `acceso · ${claudeConf().tier === "quick" ? "sempre veloce" : claudeConf().tier === "max" ? "sempre la più intelligente" : "scelta automatica"}` },
     { id:"notifiche", nome:"Notifiche e avvisi", nota: notif },
     { id:"calendario", nome:"Google Calendar", nota: gc },
     { id:"pausa", nome:"Quando sei via", nota: pausa },
@@ -6912,7 +6931,6 @@ function renderOpzioniSub(){
       ${(() => {
         const cals = calScrivibili();
         const stato = calNativo() ? "Scrivo direttamente nel calendario del telefono, che Google sincronizza."
-          : calWeb() ? "Scrivo direttamente sul tuo Google Calendar, con il collegamento a Google."
           : gApi() ? (GAPI.errore ? GAPI.errore : "Scrivo direttamente sul tuo Google Calendar, con il collegamento che hai su Claude.")
           : inApp() ? "Con questa app apro Google Calendar già compilato e tocchi Salva. Dentro Claude scrivo direttamente."
           : "Dentro Claude scrivo direttamente; qui apro Google Calendar già compilato.";
@@ -6940,14 +6958,22 @@ function renderOpzioniSub(){
       ${riga("Claude come cervello", cc.on !== false ? "Acceso: scrive il punto della giornata, capisce quello che gli dici, propone gli orari, abbina i vestiti." : "Spento: la segretaria usa le sue regole.", sino("cl-on", cc.on !== false, "Acceso", "Spento"))}
       ${CLAUDE_NO ? riga("Manca il permesso", "Hai detto di no quando Claude te l'ha chiesto. Si riaccende dal menu della pagina, alla voce Permessi.", `<button class="btn" id="cl-perm" style="flex:0 0 auto">Permessi</button>`) : ""}
       <div class="row" style="display:block">
-        <div class="rtitle" style="margin-bottom:8px">Le risposte</div>
-        <div class="chips"><button class="chip${cc.tier !== "default" ? " on" : ""}" data-cltier="quick">Veloci</button><button class="chip${cc.tier === "default" ? " on" : ""}" data-cltier="default">Più ragionate</button></div>
-        <div class="hint">${cc.tier === "default" ? "Ci pensa di più prima di rispondere: qualche secondo in più, e consuma un po' di più del tuo piano." : "Rispondono in un paio di secondi e consumano pochissimo. Il punto della giornata e gli abbinamenti li scrive sempre con più cura."}</div>
+        <div class="rtitle" style="margin-bottom:8px">Quale Claude</div>
+        <div class="chips">${[["auto", "Automatica"], ["quick", "Sempre veloce"], ["max", "Sempre la più intelligente"]].map(([k, n]) => `<button class="chip${cc.tier === k ? " on" : ""}" data-cltier="${k}">${n}</button>`).join("")}</div>
+        <div class="hint">${cc.tier === "quick" ? "Risponde sempre in un paio di secondi e consuma pochissimo del tuo piano, ma ragiona meno."
+          : cc.tier === "max" ? `Ogni risposta la ragiona ${nomeMigliore()}: è la più intelligente, ma ci mette da dieci secondi a un minuto e consuma di più del tuo piano.`
+          : `Gli ordini (segna, sposta, aggiungi) li fa il modello veloce, in un paio di secondi. Le domande, i consigli e i problemi di orario li ragiona ${nomeMigliore()}: qualche secondo in più.`}</div>
       </div>
       <div class="row" style="display:block"><button class="btn wide" id="cl-prova">Prova</button><div class="hint" id="cl-esito"></div></div>
     </div>
+    <h2>Quello che tiene a mente</h2>
+    <div class="card">
+      ${(S.memoria || []).length ? S.memoria.map(m => `<div class="row"><div class="rbody"><div class="rtitle" style="font-size:15px">${esc(m.testo)}</div></div><button class="btn ghost" data-memx="${m.id}" style="flex:0 0 auto;padding:6px 10px">Togli</button></div>`).join("")
+        : `<div class="empty">Ancora niente. Dille «ricordati che…» nella conversazione, oppure scrivilo qui.</div>`}
+      <div class="row" style="display:block">${areaTesto("mem-t", "", "Per esempio: il martedì sera non prendo impegni", 2)}<button class="btn wide" id="mem-add" style="margin-top:8px">Aggiungi</button></div>
+    </div>
     <h2>Come funziona</h2>
-    <div class="card"><div class="empty" style="color:var(--ink-soft);line-height:1.55">Coach usa il tuo account Claude: non serve una chiave e non c'è niente da pagare a parte il tuo piano, di cui consuma un po' dei limiti. La prima volta Claude ti chiede il permesso. A Claude va solo quello che serve per rispondere: quello che gli dici, gli impegni dei prossimi giorni, le cose da programmare, i progetti, i nomi delle persone e dei posti, e le foto dei vestiti quando le aggiungi.</div></div>`
+    <div class="card"><div class="empty" style="color:var(--ink-soft);line-height:1.55">Coach usa il tuo account Claude: non serve una chiave e non c'è niente da pagare a parte il tuo piano, di cui consuma un po' dei limiti. La prima volta Claude ti chiede il permesso. A Claude va solo quello che serve per rispondere: quello che gli dici, gli impegni delle prossime settimane, le cose da programmare, i progetti, le persone e i loro promemoria, le cose che tiene a mente e le foto dei vestiti quando le aggiungi. Nella conversazione ricorda i messaggi degli ultimi giorni; quando le fai una domanda può cercare da sola nel tuo calendario (anche nel passato), nelle persone, nelle scadenze e nel guardaroba. Non va su internet e non legge la posta.</div></div>`
     : `<div class="card"><div class="empty" style="color:var(--ink-soft);line-height:1.55">Claude c'è quando apri Coach dentro Claude, dal link che ti ho mandato: lì usa il tuo piano, senza chiavi e senza costi in più. Qui la segretaria lavora con le sue regole.</div></div>`;
   }
 
@@ -7029,6 +7055,8 @@ function bindOpzioni(){
   // Claude
   on("cl-on", "onclick", () => { S.claude = { ...claudeConf(), on: claudeConf().on === false }; save(); render(); });
   el.querySelectorAll("[data-cltier]").forEach(b => b.onclick = () => { S.claude = { ...claudeConf(), tier: b.dataset.cltier }; save(); render(); });
+  el.querySelectorAll("[data-memx]").forEach(b => b.onclick = () => { S.memoria = (S.memoria || []).filter(m => m.id !== b.dataset.memx); save(); render(); });
+  on("mem-add", "onclick", () => { const t = (q("mem-t") || {}).value || ""; if (!t.trim()) return; memoriaMetti(t); save(); render(); });
   on("cl-perm", "onclick", async () => { try { const pm = await capUsa("permissions"); if (pm) await pm.manage(); } catch(e){ alert("Apri il menu della pagina, alla voce Permessi."); } CLAUDE_NO = false; render(); });
   on("cl-prova", "onclick", async () => {
     const es = q("cl-esito"); if (es) es.textContent = "Chiedo a Claude…";
@@ -8601,8 +8629,7 @@ function fxEntroDa(r){
    Senza nessuno dei due si apre Google Calendar già compilato, uno alla volta, come prima.
    Il calendario si sceglie con la sua chiave (account|nome), uguale su ogni telefono. */
 const calNativo = () => inApp() && typeof NAT.inserisciEvento === "function";
-const calWeb = () => !inApp() && typeof gwebPronto === "function" && gwebPronto();
-const calDiretto = () => calNativo() || calWeb() || (gApi() && !!S.gcalOn);
+const calDiretto = () => calNativo() || (gApi() && !!S.gcalOn);
 
 // i calendari dove si può scrivere: [{ id, chiave, nome, account, principale }]
 function calScrivibili(){
@@ -8612,8 +8639,6 @@ function calScrivibili(){
       return (JSON.parse(NAT.calendariScrivibili()) || []).map(c => ({ id: String(c.id), chiave: calKey(c), nome: c.nome || "", account: c.account || "", principale: !!c.principale, colore: c.colore || "" }));
     } catch(e){ return []; }
   }
-  if (calWeb() && typeof gwebCalendariSalvati === "function")
-    return (gwebCalendariSalvati() || []).filter(c => c.scrivibile !== false).map(c => ({ id: String(c.id), chiave: calKey(c), nome: c.nome || "", account: c.account || "", principale: !!c.principale, colore: c.colore || "" }));
   return [];
 }
 // l'id, su questo dispositivo, del calendario scelto (vuoto: il principale)
@@ -8637,7 +8662,7 @@ function calEvento(ev){
     fine: allDay ? utc(addDays(ev.fineD || ev.d, 1)) : istanteMin(ev.d, ev.e > ev.s ? ev.e : ev.s + 60),
     tuttoIlGiorno: allDay,
     luogo: ev.luogo || "",
-    note: ev.nota || "",
+    note: notaConPromemoria(ev.nota, allDay ? [] : promemoriaPer(ev.titolo, ev.persone, ev.personeId)),
     avvisi: allDay ? [] : calAvvisi(),
     disponibilita: ev.libero ? "libero" : "occupato"
   };
@@ -8657,12 +8682,6 @@ async function calScrivi(evs){
     }
     if (out.some(r => r.ok) && S.gcalOn) setTimeout(() => { try { gcalRead(); runEngine(); if (!document.querySelector(".sheet")) render(); } catch(e){} }, 400);
     return out;
-  }
-  if (calWeb()){
-    try {
-      const r = await gwebScrivi(lista);
-      return r.map(x => x && x.ok ? { ok: true, key: x.key || (x.id ? "g:" + x.id : null), idLocale: null } : { ok: false, errore: (x && x.errore) || "Google non l'ha salvato" });
-    } catch(err){ return lista.map(() => ({ ok: false, errore: String(err && err.message || err) })); }
   }
   return lista.map(() => ({ ok: false, errore: "manca il collegamento a Google Calendar" }));
 }
@@ -8715,7 +8734,8 @@ function fxManda(x, p){
 function fxMandaMolti(coppie, dopo){
   for (const { x, p } of coppie) fxFissato(x, p, { ok: true, key: null });
   save();
-  return calScrivi(coppie.map(({ x, p }) => ({ titolo: x.titolo, d: p.d, s: p.s, e: p.e, luogo: x.luogo || "", nota: x.nota || "", piano: !!p.piano }))).then(ris => {
+  return calScrivi(coppie.map(({ x, p }) => ({ titolo: x.titolo, d: p.d, s: p.s, e: p.e, luogo: x.luogo || "", nota: x.nota || "", piano: !!p.piano,
+    personeId: pianoDi("fx:" + x.id).persone || [] }))).then(ris => {
     const no = [];
     coppie.forEach(({ x }, i) => {
       const r = ris[i];
@@ -9871,7 +9891,14 @@ const persone = () => S.persone || [];
 const personaDi = id => persone().find(p => p.id === id) || null;
 const nomeBreve = p => p ? String(p.nome || "").trim().split(/\s+/)[0] : "";
 
-// "Marco": il nome intero, oppure il nome o il cognome se ce l'ha una persona sola
+// il ruolo serve come nome: "l'avvocato", "il commercialista", quando ce n'è uno solo
+const PAROLE_VUOTE = new Set(["della", "dello", "delle", "degli", "mio", "mia", "miei", "nostro", "nostra", "studio", "dott", "dottor", "dottore", "signor", "signora"]);
+const ruoloParole = p => norm(p.ruolo || "").split(" ").filter(x => x.length >= 4 && !PAROLE_VUOTE.has(x));
+function perRuolo(parola){
+  const c = persone().filter(p => ruoloParole(p).includes(parola));
+  return c.length === 1 ? c[0] : null;
+}
+// "Marco": il nome intero, oppure il nome o il cognome se ce l'ha una persona sola, oppure il ruolo
 function trovaPersona(nome){
   const n = norm(nome);
   if (!n) return null;
@@ -9879,7 +9906,10 @@ function trovaPersona(nome){
   const pieno = tutti.find(x => norm(x.nome) === n);
   if (pieno) return pieno;
   const parte = tutti.filter(x => norm(x.nome).split(" ").includes(n));
-  return parte.length === 1 ? parte[0] : null;
+  if (parte.length === 1) return parte[0];
+  const parole = n.split(" ");
+  if (parole.length <= 3) for (const w of parole){ const r = perRuolo(w); if (r) return r; }
+  return null;
 }
 
 // le persone nominate in un testo: "Incontro con Marco Rossi a Bra"
@@ -9893,7 +9923,9 @@ function personeInTesto(testo){
     if (t.includes(" " + n + " ")){ out.push(p); continue; }
     const solo = n.split(" ").some(x => x.length >= 3 && t.includes(" " + x + " ")
       && persone().filter(q => norm(q.nome).split(" ").includes(x)).length === 1);
-    if (solo) out.push(p);
+    if (solo){ out.push(p); continue; }
+    // "Appuntamento avvocato": il ruolo, se è di una persona sola
+    if (ruoloParole(p).some(x => t.includes(" " + x + " ") && perRuolo(x) === p)) out.push(p);
   }
   return out;
 }
@@ -11062,7 +11094,8 @@ function dadireRigaHTML(x){
 function personePaginaHTML(T){
   const lista = persone().slice().sort((a, b) => a.nome.localeCompare(b.nome));
   const indietro = lista.filter(p => daSentire(p, T) !== null || (compleannoFra(p, T) !== null && compleannoFra(p, T) <= 7));
-  const riga = p => `<button class="actrow" data-pe="${p.id}"><div class="rbody"><div class="rtitle">${esc(p.nome)}</div>${personaMeta(p, T) ? `<div class="rmeta">${personaMeta(p, T)}</div>` : ""}</div></button>`;
+  const riga = p => { const n = daDireAperti().filter(x => x.persona === p.id).length; const meta = [p.ruolo ? esc(p.ruolo) : "", personaMeta(p, T), n ? `<span style="color:var(--accent)">${n === 1 ? "1 promemoria" : `${n} promemoria`}</span>` : ""].filter(Boolean).join('<span class="dot">·</span>');
+    return `<button class="actrow" data-pe="${p.id}"><div class="rbody"><div class="rtitle">${esc(p.nome)}</div>${meta ? `<div class="rmeta">${meta}</div>` : ""}</div></button>`; };
   return `
     <div class="btnrow" style="margin-top:0">
       ${inApp() ? `<button class="btn primary" id="pe-rubrica" style="flex:1">Dalla rubrica</button>` : ""}
@@ -11071,10 +11104,10 @@ function personePaginaHTML(T){
     <h2>${lista.length ? `Tutte · ${lista.length}` : "Nessuno ancora"}</h2>
     <div class="card">${lista.length ? lista.map(riga).join("")
       : `<div class="empty">Clienti, fornitori, amici: le persone che contano. Il numero lo prendi dalla rubrica; io mi ricordo i compleanni, ogni quanto sentirle, cosa aspetti da loro e cosa devi dirgli.</div>`}</div>
-    <h2>Da dire</h2>
+    <h2>Promemoria sulle persone</h2>
     <div class="card">${daDireAperti().length ? daDireAperti().map(dadireRigaHTML).join("")
-      : `<div class="empty">Le cose da dire a qualcuno quando lo vedi («chiedigli del video di Natale») o da fare quando sei in un posto («a Bra passa dal fornitore»). Ricompaiono da sole al momento giusto.</div>`}
-      <div class="row"><button class="btn ghost wide" id="dd-add">Aggiungi una cosa da dire</button></div></div>`;
+      : `<div class="empty">Le cose da dire, chiedere o portare a qualcuno («all'avvocato: chiedere della caparra»), o da fare quando sei in un posto («a Bra passa dal fornitore»). Te le ricordo quando vi vedete: nel punto della giornata, nella schermata della segretaria e nella descrizione dell'evento.</div>`}
+      <div class="row"><button class="btn ghost wide" id="dd-add">Aggiungi un promemoria</button></div></div>`;
 }
 
 function openPersona(id, nuovo){
@@ -11104,7 +11137,7 @@ function openPersona(id, nuovo){
         ${inApp() ? `<button class="btn" id="pe-rub">Rubrica</button>` : ""}</div></div>
       <div class="field"><label for="pe-e">Email</label>${campoTesto("pe-e", p0.email, "nome@esempio.it")}</div>
       <div class="two">
-        <div class="field"><label for="pe-r">Chi è</label>${campoTesto("pe-r", p0.ruolo, "Cliente, fornitore, amico…")}</div>
+        <div class="field"><label for="pe-r">Chi è</label>${campoTesto("pe-r", p0.ruolo, "Avvocato, commercialista, agente…")}</div>
         <div class="field"><label for="pe-c">Dove sta</label>${campoTesto("pe-c", p0.citta, "Paese")}</div>
       </div>
       <div class="field"><label for="pe-b">Compleanno</label>${campoTesto("pe-b", p0.compleanno ? compleannoLabel(p0.compleanno) : "", "15/3 oppure 15/3/1990")}</div>
@@ -11113,9 +11146,9 @@ function openPersona(id, nuovo){
       <div class="field"><label for="pe-note">Note</label>${areaTesto("pe-note", p0.note, "Come lavora, cosa gli piace, di cosa avete parlato…")}</div>
       ${prossimi.length ? `<h2>Prossimi incontri</h2><div class="card">${prossimi.map(ev => `<button class="actrow" data-piano="${esc(ev.ref)}"><div class="rbody"><div class="rtitle">${esc(ev.titolo)}</div><div class="rmeta">${esc(dayChip(ev.d))} alle ${toHHMM(ev.s)}${luogoDi(ev) ? ` · ${esc(luogoDi(ev))}` : ""}</div></div></button>`).join("")}</div>` : ""}
       ${att.length ? `<h2>Aspetti da ${esc(nomeBreve(p0))}</h2><div class="card">${att.map(a => `<button class="actrow" data-att="${a.id}"><div class="rbody"><div class="rtitle">${esc(cap(a.cosa))}</div><div class="rmeta">dal ${prettyDate(a.dal)}${a.entro ? ` · entro ${esc(dayChip(a.entro).toLowerCase())}` : ""}</div></div></button>`).join("")}</div>` : ""}
-      ${id ? `<h2>Da dire a ${esc(nomeBreve(p0))}</h2><div class="card">${dire.map(dadireRigaHTML).join("")}
-        <div class="segline" style="padding:10px 12px;margin:0"><input type="text" id="pe-dd" placeholder="Chiedigli del video di Natale…" style="flex:1;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg)"><button class="btn" id="pe-ddadd">Aggiungi</button></div></div>
-        <div class="hint">Te lo ricordo quando vi vedete: nel prossimo incontro e nell'avviso di un'ora prima.</div>` : ""}
+      ${id ? `<h2>Promemoria per ${esc(nomeBreve(p0))}</h2><div class="card">${dire.map(dadireRigaHTML).join("")}
+        <div class="segline" style="padding:10px 12px;margin:0"><input type="text" id="pe-dd" placeholder="Chiedergli della caparra, portare la visura…" style="flex:1;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg)"><button class="btn" id="pe-ddadd">Aggiungi</button></div></div>
+        <div class="hint">Le cose da dirgli, chiedergli o portare. Te le ricordo quando vi vedete: nel punto della giornata, nella schermata della segretaria prima dell'appuntamento e nella descrizione dell'evento su Google. ${p0.ruolo ? `Riconosco gli appuntamenti dal nome o da «${esc(p0.ruolo.toLowerCase())}» nel titolo.` : "Se scrivi chi è (per esempio avvocato), riconosco anche gli appuntamenti chiamati così."}</div>` : ""}
       ${passati.length || (p0.log || []).length ? `<details class="card" style="margin-top:16px"><summary style="padding:13px 14px;font-size:13.5px;color:var(--ink-soft);cursor:pointer">Storia</summary>
         ${passati.map(ev => `<button class="actrow" data-piano="${esc(ev.ref)}"><div class="rbody"><div class="rtitle" style="font-size:14px">${esc(ev.titolo)}</div><div class="rmeta">${prettyDate(ev.d)}${pianoDi(ev.ref).esito && !pianoDi(ev.ref).esito.nulla ? " · verbale" : ""}</div></div></button>`).join("")}
         ${(p0.log || []).slice().reverse().slice(0, 12).map(l => `<div class="stat"><span>${esc(cap(l.t))}</span><span>${prettyDate(l.d)}</span></div>`).join("")}
@@ -11162,8 +11195,8 @@ function openDaDire(id, campi){
   const x = id ? (S.dadire || []).find(y => y.id === id) : { id: nuovoId("dd"), testo: preNome(), persona: null, luogo: null, creato: today(), fatto: null, ...(campi || {}) };
   if (!x) return;
   const p = x.persona ? personaDi(x.persona) : null;
-  const w = foglio(`<h3>${id ? "Da dire" : "Una cosa da dire"}</h3>
-    <div class="field"><label for="dd-t">Cosa</label>${campoTesto("dd-t", x.testo, "Chiedigli del video di Natale")}</div>
+  const w = foglio(`<h3>${id ? "Promemoria" : "Un promemoria"}</h3>
+    <div class="field"><label for="dd-t">Cosa</label>${campoTesto("dd-t", x.testo, "Chiedergli della caparra")}</div>
     <div class="field"><label for="dd-p">A chi</label><input type="text" id="dd-p" list="dl-persone" value="${esc(p ? p.nome : "")}" placeholder="Un nome" autocomplete="off">${listaNomi()}</div>
     <div class="field"><label for="dd-l">Oppure dove</label>${campoTesto("dd-l", x.luogo ? nomeChiave(x.luogo) : "", "Un paese: te lo ricordo quando ci vai")}</div>
     <div class="btnrow"><button class="btn primary" id="dd-ok" style="flex:2">Salva</button><button class="btn ghost" id="dd-x">Annulla</button></div>
@@ -12324,7 +12357,7 @@ async function claudeRivediPiano(d, piano){
     fuori.length ? `Non ci stanno oggi: ${fuori.map(x => `[id=${x.id}] ${x.titolo} (${minutiLabel(+x.durata || 60)}${x.entro ? `, entro il ${x.entro}` : ""})`).join("; ")}.` : "",
     "\nRivedi il piano come farebbe una brava segretaria. Puoi spostare una proposta a un altro orario libero di oggi, oppure toglierla, solo se c'è un motivo concreto (scadenze, strada, stanchezza, pranzo, incastri). Non toccare i punti fissi. Dammi al massimo tre consigli pratici per la giornata, e un breve testo da leggere ad alta voce dopo l'elenco degli impegni (al massimo tre frasi)."
   ].filter(Boolean).join("\n");
-  const r = (await claudeJSON(`${CLAUDE_STILE}\n\n${testo}\n\nRispondi SOLO con un JSON così: {"consigli": ["al massimo tre consigli brevi e concreti"], "modifiche": [{"id": "l'id della proposta", "inizio": "HH:MM, oppure null per toglierla dal piano di oggi", "perche": "..."}], "lettura": "due o tre frasi da leggere ad alta voce"}`, { tier: claudeConf().tier || "quick", cache: false })) || {};
+  const r = (await claudeJSON(`${CLAUDE_STILE}\n\n${testo}\n\nRispondi SOLO con un JSON così: {"consigli": ["al massimo tre consigli brevi e concreti"], "modifiche": [{"id": "l'id della proposta", "inizio": "HH:MM, oppure null per toglierla dal piano di oggi", "perche": "..."}], "lettura": "due o tre frasi da leggere ad alta voce"}`, { tier: tierPer("piano"), cache: false })) || {};
   // controllo che gli spostamenti stiano davvero negli spazi liberi
   const modifiche = [];
   for (const m of (r.modifiche || [])){
@@ -12772,7 +12805,7 @@ ${contestoPerClaude(14)}
 TESTO DETTATO:
 ${testo}
 
-Rispondi SOLO con un JSON così: {"risposta": "solo se è una domanda o una richiesta di consiglio", "cose": [{"tipo": uno fra ${Object.keys(CLAUDE_TIPI).map(k => `"${k}"`).join(", ")}, "titolo", "data": "AAAA-MM-GG", "ora": "HH:MM", "fine": "HH:MM", "durata_minuti", "dal", "al", "entro", "ora_preferita", "luogo", "persone": [], "incontro": true/false, "importanza": "alta|media|bassa", "nota", "da_chi", "cosa", "a_chi", "voci": [], "ogni_mesi", "giorni_settimana": [0-6]}]}. Metti solo i campi che servono.`, { tier: claudeConf().tier || "quick", cache: false })) || {};
+Rispondi SOLO con un JSON così: {"risposta": "solo se è una domanda o una richiesta di consiglio", "cose": [{"tipo": uno fra ${Object.keys(CLAUDE_TIPI).map(k => `"${k}"`).join(", ")}, "titolo", "data": "AAAA-MM-GG", "ora": "HH:MM", "fine": "HH:MM", "durata_minuti", "dal", "al", "entro", "ora_preferita", "luogo", "persone": [], "incontro": true/false, "importanza": "alta|media|bassa", "nota", "da_chi", "cosa", "a_chi", "voci": [], "ogni_mesi", "giorni_settimana": [0-6]}]}. Metti solo i campi che servono.`, { tier: tierPer("conversa", testo), cache: false })) || {};
   return { risposta: String(r.risposta || "").trim(), lista: (r.cose || []).map(rDaClaude).filter(x => x.titolo || (x.voci || []).length) };
 }
 
@@ -12985,10 +13018,11 @@ function renderSegretaria(){
       <div class="btnrow" style="margin-top:10px"><a class="btn primary" href="${COACH_SU_CLAUDE}" target="_blank" rel="noopener" style="flex:2;display:block;text-align:center;text-decoration:none">Apri Coach su Claude</a><button class="btn ghost" id="suclaude-dopo" style="flex:1">Più tardi</button></div></div>`}
 
     ${pausa ? "" : `<section class="riq" data-riq="punto">${puntoCardHTML()}</section>`}
-    ${pausa ? "" : `<section class="riq" id="cv-sez">${conversaHTML()}</section>`}
+    <section class="riq" id="cv-sez">${conversaHTML()}</section>
     ${pausa || !giornoPianifica(T) || settimanaFatta(settimanaDi(T).lun) ? "" : `<div class="card breve" style="margin-top:12px">
       <div class="brevetxt">È il giorno per pianificare la settimana: cinque minuti, quando vuoi.</div>
       <div class="btnrow" style="margin-top:10px"><button class="btn primary" id="casa-sett2" style="flex:1">Pianifichiamo la settimana</button></div></div>`}
+    ${pausa ? "" : `<section class="riq" data-riq="promemoria">${promemoriaCardHTML()}</section>`}
     ${pausa ? "" : `<section class="riq" data-riq="piano">${pianoCardHTML(T)}</section>`}
     ${pausa ? "" : `<section class="riq" data-riq="programmare">${sezioneDomandeHTML("Da programmare", prog, fxAperti().length ? "" : "Niente da programmare. Quello che mi dici senza giorno e ora finisce qui, e ti propongo io quando farlo.", "casa-coll1")}
       ${attesaGoogle.length ? `<div class="card" style="margin-top:9px">${attesaGoogle.map(fxAttesaHTML).join("")}</div>` : ""}</section>`}
@@ -12998,6 +13032,7 @@ function renderSegretaria(){
 
     <div class="casalink">
       <button class="btn" id="casa-sett">La settimana</button>
+      <button class="btn" id="casa-persone">Persone</button>
       <button class="btn" id="casa-guardaroba">Guardaroba</button>
       <button class="btn" id="casa-rimedia">Rimedia la giornata</button>
       <button class="btn" id="casa-giornata">La giornata completa</button>
@@ -13018,6 +13053,8 @@ function bindCasa(){
   bindConversa();
   bindProgetti(el);
   one("casa-guardaroba", () => { TAB = "guardaroba"; GDSUB = "capi"; render(); });
+  one("casa-persone", () => { PROGSUB = "persone"; PROG_DA = "oggi"; TAB = "base"; render(); });
+  el.querySelectorAll("[data-pmgoogle]").forEach(b => b.onclick = () => { b.disabled = true; b.textContent = "Scrivo…"; promemoriaSuGoogle(b.dataset.pmgoogle, b.dataset.pmd).then(ok => { b.disabled = false; b.textContent = ok ? "Sono nell'evento" : "Mettili nell'evento su Google"; }); });
   el.querySelectorAll("#pc-apri").forEach(b => b.onclick = () => openPianoGiorno(today()));
   one("pc-domani", () => openPianoGiorno(addDays(today(), 1)));
   one("pc-sera", () => openPianoGiorno(today()));
@@ -13060,12 +13097,7 @@ function calAvvisoHTML(){
       <div class="brevetxt">Per mettere gli impegni direttamente sul tuo Google Calendar mi serve il permesso di scrivere nel calendario del telefono.</div>
       <div class="btnrow" style="margin-top:10px"><button class="btn primary" id="cal-permesso" style="flex:1">Dai il permesso</button></div></div>`;
   }
-  if (!inApp() && !calWeb()){
-    return `<div class="card breve" style="margin-bottom:12px">
-      <div class="adlab" style="color:var(--accent)">Google Calendar</div>
-      <div class="brevetxt">Qui non vedo ancora il tuo Google Calendar. Collegalo una volta e la segretaria lo legge e ci scrive anche da questo telefono.</div>
-      <div class="btnrow" style="margin-top:10px"><button class="btn primary" id="cal-google" style="flex:1">Collega Google Calendar</button></div></div>`;
-  }
+  // nel browser, fuori da Claude, Google Calendar non si collega: lo dice già il riquadro «Coach ora vive dentro Claude»
   return "";
 }
 
@@ -13174,6 +13206,77 @@ function trovaProgetto(titolo){
   return progettiAperti().find(p => fxNorm(p.titolo) === t) || progettiAperti().find(p => fxNorm(p.titolo).includes(t) || t.includes(fxNorm(p.titolo))) || null;
 }
 
+/* ---------- I PROMEMORIA SULLE PERSONE, AL MOMENTO GIUSTO ----------
+   Le cose da dire, chiedere o portare a qualcuno (S.dadire) tornano quando lo vedi: nel punto,
+   nella schermata della segretaria il giorno dell'appuntamento, nella descrizione dell'evento. */
+// gli appuntamenti di un giorno (anche quelli che si ripetono) con i promemoria per chi vedi; oggi solo quelli non ancora finiti
+function promemoriaDel(d){
+  const T = today(), n = nowMin();
+  const evs = impegniTra(d, d);
+  if (S.gcalOn) for (const g of (GCAL.byDay[d] || [])){
+    if (!g.recurring || g.allDay || !g.inst) continue;
+    evs.push({ ref: "gc:" + g.key, fonte: "gc", titolo: g.label, d, s: g.s, e: g.e, luogo: g.inst.place || "", g: g.inst });
+  }
+  const out = [];
+  for (const ev of evs.sort((a, b) => a.s - b.s)){
+    if (d === T && ev.e <= n) continue;
+    const dire = daDirePer(ev);
+    if (dire.length) out.push({ ev, dire, chi: personeDi(ev) });
+  }
+  return out;
+}
+const promemoriaOggi = () => promemoriaDel(today());
+// i promemoria di chi c'è in un appuntamento che sto per scrivere su Google (dal titolo, dai nomi detti, dalle persone scelte)
+function promemoriaPer(titolo, nomi, ids){
+  const set = new Set((ids || []).filter(Boolean));
+  for (const p of personeInTesto(titolo)) set.add(p.id);
+  for (const n of (nomi || [])){ const p = trovaPersona(n); if (p) set.add(p.id); }
+  return set.size ? daDireAperti().filter(x => x.persona && set.has(x.persona)) : [];
+}
+// nella descrizione dell'evento: il blocco dei promemoria in fondo, rifatto ogni volta (il resto non si tocca)
+const PM_SEGNO = "Promemoria di Coach:";
+const PM_VIA = /(?:\s|<br\s*\/?>)*Promemoria di Coach:(?:(?:\r?\n|<br\s*\/?>)[ \t]*-[^\n<]*)*/gi;
+function notaConPromemoria(nota, dire){
+  const base = String(nota || "").replace(PM_VIA, "").trim();
+  if (!dire || !dire.length) return base;
+  const a = /<\/?[a-z][^>]*>/i.test(base) ? "<br>" : "\n";
+  return `${base ? base + a + a : ""}${PM_SEGNO}${dire.map(x => a + "- " + x.testo).join("")}`;
+}
+function promemoriaCardHTML(){
+  const T = today();
+  let d = T, lista = promemoriaDel(T), titolo = "Oggi vedi";
+  if (!lista.length && fasciaOra() === "sera"){ d = addDays(T, 1); lista = promemoriaDel(d); titolo = "Domani vedi"; }
+  if (!lista.length) return "";
+  return `<div class="hrow"><h2>${titolo}</h2></div>` + lista.map(({ ev, dire, chi }) => `<div class="card" style="margin-bottom:10px">
+    <div class="rmeta" style="padding:12px 14px 0">${d === T ? "Alle" : "Domani alle"} ${orario(ev.s)} · ${esc(ev.titolo)}${chi.length ? ` · ${esc(chi.map(p => p.nome).join(", "))}` : ""}</div>
+    ${dire.map(dadireRigaHTML).join("")}
+    <div class="segbar">
+      ${ev.g && gApi() ? `<button class="btn" data-pmgoogle="${esc(ev.ref)}" data-pmd="${d}">Mettili nell'evento su Google</button>` : ""}
+      ${chi[0] ? `<button class="btn" data-pe="${chi[0].id}">Scheda di ${esc(nomeBreve(chi[0]))}</button>` : ""}
+    </div></div>`).join("");
+}
+// scrive i promemoria nella descrizione dell'evento su Google. Prima rilegge la descrizione intera
+// (quella che tengo è accorciata), così quello che c'era resta com'era; ai partecipanti non arriva niente.
+async function promemoriaSuGoogle(ref, d){
+  const x = promemoriaDel(d || today()).find(y => y.ev.ref === ref);
+  if (!x || !x.ev.g || !gApi()) return false;
+  const g = x.ev.g;
+  try {
+    const q = { startTime: `${g.date}T00:00:00`, endTime: `${addDays(g.endDate || g.date, 1)}T00:00:00`, pageSize: 250 };
+    if (g.cal && g.cal !== GAPI.account) q.calendarId = g.cal;
+    const r0 = await CAP.mcp.callTool(GSERVER, "list_events", q, { cache: false });
+    const p0 = (r0 && r0.payload) || {};
+    const vero = (p0.events || p0.items || []).find(e => String(e.id) === String(g.id));
+    if (!vero){ alert("Non trovo più questo evento su Google Calendar: aggiorno, poi riprova."); gcalAggiorna(true); return false; }
+    const inp = { eventId: g.id, description: notaConPromemoria(vero.description || "", x.dire), notificationLevel: "NONE" };
+    if (g.cal && g.cal !== GAPI.account) inp.calendarId = g.cal;
+    await CAP.mcp.callTool(GSERVER, "update_event", inp);
+    toast("Fatto: i promemoria sono nella descrizione dell'evento.");
+    setTimeout(() => gcalAggiorna(true), 400);
+    return true;
+  } catch(e){ alert(gErrore(e)); return false; }
+}
+
 /* ---------- quello che la segretaria sa, scritto per Claude ----------
    RIF: i codici dell'agenda (E1, E2…) per spostare o togliere un impegno. */
 const GGLUNGHI = ["domenica", "lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato"];
@@ -13206,6 +13309,8 @@ function contestoSegretaria(opts){
   const nome = segr().nome ? segr().nome.split(" ")[0] : "";
   righe.push(`OGGI: ${dataParlata(T)} ${T.slice(0, 4)} (${T}), ore ${toHHMM(n)}. Fuso orario: Europa/Roma.`);
   if (nome) righe.push(`SI CHIAMA: ${nome}.`);
+  const mem = (S.memoria || []).slice(-40).map(m => `- ${m.testo}`);
+  if (mem.length) righe.push(`COSE CHE TI HA CHIESTO DI TENERE A MENTE (valgono sempre):\n${mem.join("\n")}`);
   const cal = [];
   for (let i = 0; i < 28; i++){ const d = addDays(T, i); cal.push(`${GG3[dow(d)].toLowerCase()} ${+d.slice(8)}/${+d.slice(5, 7)} = ${d}`); }
   righe.push(`CALENDARIO (per calcolare le date): ${cal.join("; ")}.`);
@@ -13232,7 +13337,10 @@ function contestoSegretaria(opts){
         if (ref){ const pt = partenzaDi({ ref, titolo: v.titolo, d, s: v.s, e: v.e, luogo: v.luogo }); if (pt !== null && pt !== undefined && pt < v.s) partenza = `, partire alle ${toHHMM(pt)}`; }
       }
       const nota = v.key && gcxOf(v.key).note ? `, nota: ${String(gcxOf(v.key).note).slice(0, 80)}` : "";
-      righe.push(`- ${ora} ${v.titolo}${v.luogo ? ` (${v.luogo})` : ""}${rif ? ` [${rif}]` : ""} categoria ${cat}, imp ${IMP_PAROLA[imp]}${v.fisso ? ", si ripete" : ""}${partenza}${nota}`);
+      const evRef = v.o ? "ev:" + v.o.id : v.g ? "gc:" + v.key : v.x ? "fx:" + v.x.id : null;
+      const dire = evRef ? daDirePer({ ref: evRef, titolo: v.titolo, d, s: v.s, e: v.e, luogo: v.luogo }) : [];
+      const pm = dire.length ? `, promemoria per chi vede: ${dire.map(x => x.testo).join("; ")}` : "";
+      righe.push(`- ${ora} ${v.titolo}${v.luogo ? ` (${v.luogo})` : ""}${rif ? ` [${rif}]` : ""} categoria ${cat}, imp ${IMP_PAROLA[imp]}${v.fisso ? ", si ripete" : ""}${partenza}${nota}${pm}`);
     }
     for (const a of att) righe.push(`- da fare ${a.win.start}–${a.win.end}: ${a.name}${toMin(a.win.start) >= 18 * 60 ? " (la sera)" : ""}, si ripete ${a.rec && a.rec.type === "weekly" ? "ogni settimana" : "regolarmente"}`);
     for (const r of prom) righe.push(`- promemoria: ${r.text}`);
@@ -13260,6 +13368,8 @@ function contestoSegretaria(opts){
   if (lu.length) righe.push(`MINUTI DI STRADA DA CASA: ${lu.join(", ")}.`);
   const pp = persone().slice(0, 40).map(p => p.nome + (p.ruolo ? ` (${p.ruolo})` : ""));
   if (pp.length) righe.push(`PERSONE: ${pp.join(", ")}.`);
+  const pmTutti = daDireAperti().slice(0, 30).map(x => { const p = x.persona ? personaDi(x.persona) : null; return `- ${p ? `${p.nome}${p.ruolo ? ` (${p.ruolo})` : ""}` : x.luogo ? `a ${nomeChiave(x.luogo)}` : "?"}: ${x.testo}`; });
+  if (pmTutti.length) righe.push(`PROMEMORIA SULLE PERSONE (da ricordare quando le vede):\n${pmTutti.join("\n")}`);
   const att = attesaAperte().slice(0, 10).map(a => `${a.cosa}${nomeAttesa(a) ? ` da ${nomeAttesa(a)}` : ""}`);
   if (att.length) righe.push(`ASPETTA: ${att.join("; ")}.`);
   const sc = scadenzeAperte().filter(s => s.data && daysBetween(T, s.data) <= 30).map(s => `${s.cosa} il ${s.data}`);
@@ -13293,6 +13403,8 @@ function puntoLocale(){
     const altri = ord.slice(1, 4).sort((a, b) => a.s - b.s);
     if (altri.length) parti.push(`Poi ${elenco(altri.map(v => `${minuscola(v.titolo)} alle ${orario(v.s)}`))}.`);
   }
+  for (const { ev, dire } of promemoriaDel(giorno).slice(0, 3))
+    parti.push(cap(`${giorno === T ? "" : "domani, "}per ${minuscola(nomeCorto(ev.titolo))} alle ${orario(ev.s)} ricordati: ${elenco(dire.map(x => minuscola(x.testo)))}.`));
   const lavoro = agendaGiorno(giorno).filter(v => v.fisso && categoriaDi(v.titolo, v.key) === "lavoro" && !(giorno === T && v.e <= n));
   const fasceLavoro = [...new Map(lavoro.map(v => [`${v.s}-${v.e}`, v])).values()].sort((a, b) => a.s - b.s);
   if (fasceLavoro.length) parti.push(`Al lavoro ${fasceLavoro.map(v => `dalle ${orario(v.s)} alle ${orario(v.e)}`).join(" e ")}.`);
@@ -13330,13 +13442,14 @@ Come scriverlo:
 - Le cose che tornano ogni settimana in quel giorno (per esempio la spazzatura) e quelle da fare la sera.
 - I progetti in scadenza: fra quanti giorni scadono, quante ore mancano e quante dedicarci oggi.
 - Se vedi un problema (due impegni sovrapposti, poco tempo per spostarsi, una scadenza che non ci sta) dillo in una frase con la soluzione.
+- Se per un appuntamento ci sono promemoria per chi vede, ricordali uno per uno.
 - Se c'è un piano proposto per oggi, dillo in una frase e chiedi se lo confermi.
 - Chiudi con una domanda breve, per esempio se vuole aggiungere qualcosa.
 - Non inventare niente: usa solo i dati qui sotto.
 
 DATI:
 ${contestoSegretaria({ giorni: fascia === "mattina" ? 3 : 4 })}`;
-  return claudeChiedi(prompt, { tier: claudeConf().tierPunto || "default", onText, cache: false });
+  return claudeChiedi(prompt, { tier: tierPer("punto"), onText, cache: false });
 }
 
 let PUNTO_IN_CORSO = false;
@@ -13382,7 +13495,193 @@ function puntoCardHTML(){
 /* ---------- PARLARE CON LA SEGRETARIA ----------
    La conversazione di oggi resta (anche passando dal Samsung all'iPhone). Ogni sua risposta può
    portare delle azioni: le vedi una per una, tocchi Conferma e partono. */
-const conversa = () => { const c = S.conversa; return c && c.d === today() ? c : (S.conversa = { d: today(), turni: [] }); };
+const CV_MAX = 80, CV_STORIA = 20;
+function conversa(){
+  let c = S.conversa;
+  if (!c || !Array.isArray(c.turni)) c = S.conversa = { turni: [] };
+  const ora = Date.now();
+  for (const t of c.turni){
+    // azioni rimaste lì da ore: non le confermo più (gli impegni potrebbero essere cambiati)
+    if (t.stato === "da confermare" && t.at && ora - t.at > 12 * 3600000) t.stato = "scadute";
+    // una risposta rimasta a metà (la pagina chiusa mentre pensava)
+    if (t.stato === "pensa" && !CONV_CTL && t.at && ora - t.at > 10 * 60000){ t.stato = "fatto"; t.errore = true; t.testo = t.testo || "Non ho fatto in tempo a rispondere: riscrivimelo."; }
+    // confermate e rimaste a metà (la pagina chiusa mentre scriveva su Google)
+    if (t.stato === "in corso" && ora - (t.inCorsoAt || t.at || 0) > 10 * 60000){ t.stato = "confermate"; t.esito = t.esito || "Interrotte a metà: controlla sul calendario cosa è andato."; }
+  }
+  return c;
+}
+// il turno com'è adesso nei dati: mentre Claude pensa, un altro dispositivo può aver cambiato qualcosa e i dati
+// sono stati riletti; il turno che avevo in mano allora non è più quello dentro S
+function turnoVivo(t){
+  const c = conversa();
+  return c.turni.find(x => x === t) || c.turni.find(x => (t.id && x.id === t.id) || (!t.id && x.chi === t.chi && x.at === t.at)) || null;
+}
+function memoriaMetti(testo){
+  const t = cap(String(testo || "").trim());
+  if (!t) return;
+  if ((S.memoria || []).some(m => norm(m.testo) === norm(t))) return;
+  S.memoria = (S.memoria || []).concat([{ id: nuovoId("me"), testo: t, at: Date.now() }]).slice(-60);
+}
+// la conversazione dei giorni scorsi per Claude: i suoi messaggi come li aveva scritti (JSON), il giorno quando cambia,
+// e com'è andata con le azioni proposte
+const AZ_CLAUDE = { prom: "promemoria", dadire: "promemoria_persona", fissare: "da_programmare", scadenza: "scadenza", attesa: "attesa", spesa: "spesa", att: "attivita", evento: "evento" };
+const giornoDi = at => at ? iso(new Date(at)) : today();
+function storiaPerClaude(turni){
+  const T = today(), ieri = addDays(T, -1);
+  const msgs = [];
+  let giorno = null, nota = "";
+  const quando = d => d === T ? "oggi" : d === ieri ? "ieri" : dataParlata(d);
+  for (const t of turni){
+    if (!t.testo || t.stato === "pensa") continue;
+    const d = giornoDi(t.at);
+    if (t.chi === "io"){
+      const pre = d !== giorno ? `[${quando(d)}] ` : "";
+      giorno = d;
+      msgs.push({ role: "user", content: nota + pre + t.testo });
+      nota = "";
+    } else {
+      const az = (t.azioni || []).map(a => ({ tipo: a.tipo === "frase" ? (AZ_CLAUDE[a.r && a.r.tipo] || "promemoria") : a.tipo, titolo: a.titolo }));
+      msgs.push({ role: "assistant", content: JSON.stringify(az.length ? { risposta: t.testo, azioni: az } : { risposta: t.testo }) });
+      nota = !az.length ? "" : t.stato === "confermate" ? "(Le azioni che mi avevi proposto le ho confermate e sono state fatte.) "
+        : t.stato === "da confermare" ? "(Le azioni che mi avevi proposto non le ho ancora confermate.) " : "(Le azioni che mi avevi proposto non le ho confermate.) ";
+    }
+  }
+  return { msgs, nota, giorno };
+}
+// la risposta mentre Claude la scrive: il pezzo di "risposta" del JSON
+function estraiRisposta(t){
+  const m = String(t || "").match(/"risposta"\s*:\s*"((?:[^"\\]|\\.)*)/);
+  if (!m) return "";
+  const x = m[1].replace(/\\u[0-9a-fA-F]{0,3}$/, "").replace(/\\$/, "");
+  try { return JSON.parse(`"${x}"`); } catch(e){ return x.replace(/\\n/g, "\n").replace(/\\"/g, '"').replace(/\\\\/g, "\\"); }
+}
+
+/* ---------- la segretaria cerca nei tuoi dati (solo quando le fai una domanda) ---------- */
+function righeEventiGoogle(evs, raggruppa){
+  const out = [], serie = {};
+  for (const ev of evs){
+    const n = gNativo(ev);
+    if (!isFinite(n.inizio)) continue;
+    const A = new Date(n.inizio), B = new Date(n.fine);
+    const d = n.tuttoIlGiorno ? new Date(n.inizio).toISOString().slice(0, 10) : iso(A);
+    const ora = n.tuttoIlGiorno ? "tutto il giorno" : `${toHHMM(A.getHours() * 60 + A.getMinutes())}–${toHHMM(B.getHours() * 60 + B.getMinutes())}`;
+    const riga = `${d} ${GG3[dow(d)].toLowerCase()} ${ora} ${n.titolo || "Impegno"}${n.luogo ? ` (${n.luogo})` : ""}${n.note ? ` — ${n.note.replace(/\s+/g, " ").slice(0, 120)}` : ""}`;
+    if (raggruppa && n.serie){ (serie[n.serie] = serie[n.serie] || { titolo: n.titolo, ora, giorni: new Set(), n: 0, prima: riga }).n++; serie[n.serie].giorni.add(GG3[dow(d)].toLowerCase()); continue; }
+    out.push(riga);
+  }
+  for (const x of Object.values(serie)) out.push(x.n <= 2 ? x.prima : `${x.titolo}: si ripete, ${x.n} volte (${[...x.giorni].join(" ")}, ${x.ora})`);
+  return out;
+}
+async function cercaAgenda(inp){
+  const T = today();
+  let dal = dataOk(inp && inp.dal) ? inp.dal : addDays(T, -30);
+  let al = dataOk(inp && inp.al) ? inp.al : addDays(T, 30);
+  if (al < dal) [dal, al] = [al, dal];
+  if (daysBetween(dal, al) > 400) al = addDays(dal, 400);
+  const testo = String((inp && inp.testo) || "").trim().slice(0, 80);
+  const raggruppa = !testo && daysBetween(dal, al) > 7;
+  let righe = [];
+  if (gApi()){
+    const evs = [];
+    for (const c of (GAPI.calendari || [])){
+      if (S.gcalOff.includes(gCalKey(c))) continue;
+      let token = null, giri = 0;
+      do {
+        const q = { startTime: `${dal}T00:00:00`, endTime: `${addDays(al, 1)}T00:00:00`, pageSize: 250, orderBy: "startTime" };
+        if (!c.primario) q.calendarId = c.id;
+        if (testo) q.fullText = testo;
+        if (token) q.pageToken = token;
+        let r;
+        try { r = await CAP.mcp.callTool(GSERVER, "list_events", q, { cache: false }); }
+        catch(e){ if (c.primario) throw new Error(gErrore(e)); break; }
+        const p = (r && r.payload) || {};
+        for (const ev of (p.events || p.items || [])) if (ev && ev.status !== "cancelled" && ev.start) evs.push(ev);
+        token = p.nextPageToken || null;
+      } while (token && ++giri < 3);
+    }
+    righe = righeEventiGoogle(evs, raggruppa);
+  } else if (S.gcalOn){
+    const t = norm(testo);
+    for (const g of GCAL.list) if (g.date >= dal && g.date <= al && (!t || norm(`${g.label} ${g.place} ${g.note}`).includes(t)))
+      righe.push(`${g.date} ${g.allDay ? "tutto il giorno" : `${g.start}–${g.end}`} ${g.label}${g.place ? ` (${g.place})` : ""}`);
+  }
+  // quello che è solo in Coach (segnato qui, o fissato e non ancora riletto da Google)
+  const t = norm(testo);
+  for (const ev of impegniTra(dal, al)) if (ev.fonte !== "gc" && (!t || norm(`${ev.titolo} ${ev.luogo}`).includes(t)))
+    righe.push(`${ev.d} ${toHHMM(ev.s)}–${toHHMM(ev.e)} ${ev.titolo}${ev.luogo ? ` (${ev.luogo})` : ""} [segnato in Coach]`);
+  righe.sort();
+  const tot = righe.length;
+  if (!tot) return `Nessun impegno fra il ${dal} e il ${al}${testo ? ` con «${testo}»` : ""}.`;
+  return `${tot} impegni fra il ${dal} e il ${al}${testo ? ` con «${testo}»` : ""}:\n${righe.slice(0, 120).join("\n")}${tot > 120 ? `\n(e altri ${tot - 120}: restringi le date)` : ""}`;
+}
+function schedaPersona(nome){
+  const n = norm(nome);
+  const p = trovaPersona(nome) || persone().find(q => n && norm(q.ruolo || "").includes(n)) || persone().find(q => n && norm(q.nome).includes(n));
+  if (!p) throw new Error(`Non c'è nessuna persona «${nome}». Le persone sono: ${persone().slice(0, 50).map(q => q.nome + (q.ruolo ? ` (${q.ruolo})` : "")).join(", ") || "nessuna"}.`);
+  const T = today();
+  const conLei = ev => personeDi(ev).some(q => q.id === p.id);
+  const riga = ev => `${ev.d} ${toHHMM(ev.s)} ${ev.titolo}${ev.luogo ? ` (${ev.luogo})` : ""}`;
+  const dd = (S.dadire || []).filter(x => x.persona === p.id);
+  return {
+    nome: p.nome, ruolo: p.ruolo || "", citta: p.citta || "", telefono: p.tel || "", email: p.email || "", compleanno: p.compleanno || "",
+    note: String(p.note || "").slice(0, 800), sentirla_ogni_giorni: p.ogni || null, ultima_volta_sentita: p.ultimo || null,
+    promemoria_aperti: dd.filter(x => !x.fatto).map(x => x.testo),
+    promemoria_fatti: dd.filter(x => x.fatto).slice(-10).map(x => `${x.testo} (fatto il ${x.fatto})`),
+    prossimi_impegni: impegniTra(T, addDays(T, 90)).filter(conLei).slice(0, 10).map(riga),
+    impegni_recenti: impegniTra(addDays(T, -21), addDays(T, -1)).filter(conLei).slice(-10).map(riga),
+    nota: "Per gli impegni più vecchi usa cerca_agenda con il suo nome o il suo ruolo."
+  };
+}
+function cercaDati(inp){
+  const q = norm((inp && inp.testo) || "");
+  if (!q) throw new Error("Dimmi cosa cercare.");
+  const parole = q.split(" ").filter(w => w.length >= 3);
+  const ok = x => { const n = norm(x); return parole.length ? parole.every(w => n.includes(w)) : n.includes(q); };
+  const out = [];
+  const metti = (tipo, testo) => { if (out.length < 80 && ok(testo)) out.push(`${tipo}: ${testo}`); };
+  for (const x of (S.dadire || [])) metti(x.fatto ? `promemoria per una persona (fatto il ${x.fatto})` : "promemoria per una persona", `${x.persona && personaDi(x.persona) ? personaDi(x.persona).nome + ": " : ""}${x.testo}`);
+  for (const x of (S.scadenze || [])) metti(x.fatto ? "scadenza (fatta)" : "scadenza", `${x.cosa}${x.data ? ` il ${x.data}` : ""}${x.note ? ` — ${x.note}` : ""}`);
+  for (const a of (S.attese || [])) metti(a.stato === "aperta" ? "aspetta" : "aspettava", `${a.cosa}${nomeAttesa(a) ? ` da ${nomeAttesa(a)}` : ""}${a.entro ? ` entro il ${a.entro}` : ""}`);
+  for (const p of (S.progetti || [])) metti(p.stato === "finito" ? "progetto (finito)" : "progetto", `${p.titolo}${p.entro ? ` entro il ${p.entro}` : ""}, ${Math.round((p.fatti || 0) / 6) / 10} ore fatte su ${Math.round((p.minuti || 0) / 6) / 10}`);
+  for (const x of fxTutti()) if (x.stato === "aperto" || x.stato === "proposto") metti("da programmare", `${x.titolo}${x.entro ? ` entro il ${x.entro}` : ""}`);
+  for (const a of (S.activities || [])) metti("cosa che si ripete", `${a.name}${a.win ? ` ${a.win.start}–${a.win.end}` : ""}`);
+  for (const r of (S.reminders || [])) metti("promemoria", `${r.text}${r.when && r.when.date ? ` il ${r.when.date}` : ""}`);
+  for (const m of (S.memoria || [])) metti("da tenere a mente", m.testo);
+  for (const o of (S.oneoffs || [])) metti("impegno segnato in Coach", `${o.date} ${o.allDay ? "" : o.start + " "}${o.label}${o.place ? ` (${o.place})` : ""}${o.note ? ` — ${o.note}` : ""}`);
+  for (const p of persone()) metti("persona", `${p.nome}${p.ruolo ? ` (${p.ruolo})` : ""}${p.note ? ` — ${String(p.note).slice(0, 200)}` : ""}`);
+  for (const k in (S.gcx || {})){ const nt = S.gcx[k] && S.gcx[k].note; if (nt){ const g = GCAL.series[k]; metti("nota di un impegno", `${g ? g.label : "impegno"}: ${nt}`); } }
+  return out.length ? out.join("\n") : "Niente trovato.";
+}
+function spaziLiberi(inp){
+  const d = dataOk(inp && inp.data) ? inp.data : today();
+  const dur = +(inp && inp.durata_minuti) > 0 ? Math.min(600, +inp.durata_minuti) : 30;
+  const fascia = ["mattina", "pranzo", "pomeriggio", "sera"].includes(inp && inp.fascia) ? inp.fascia : undefined;
+  const f = fxFinestre(d, null, fascia).filter(([a, b]) => b - a >= dur).map(([a, b]) => `${toHHMM(a)}–${toHHMM(b)}`);
+  return f.length ? `${dataParlata(d)} (${d}): ${f.join(", ")}` : `${dataParlata(d)} (${d}): nessuno spazio libero di ${dur} minuti${fascia ? ` (${fascia})` : ""}.`;
+}
+function strumentiSegretaria(turno){
+  const lim = CLAUDE_LIMITI && CLAUDE_LIMITI.tools;
+  if (!lim) return null;
+  const segna = t => { if (turno.testo) return; turno.lavoro = t; const b = document.getElementById("cv-pensa"); if (b) b.textContent = t; };
+  const lista = [
+    { name: "cerca_agenda", description: "Cerca nel suo Google Calendar e in Coach gli impegni fra due date, anche passate o lontane (i DATI hanno solo le prossime settimane). Restituisce una riga per impegno: data, ora, titolo, luogo, nota. Con testo cerca solo gli impegni che contengono quelle parole (nel titolo, nel luogo o nella descrizione).",
+      inputSchema: { type: "object", properties: { dal: { type: "string", description: "AAAA-MM-GG" }, al: { type: "string", description: "AAAA-MM-GG" }, testo: { type: "string", description: "parole da cercare (facoltativo)" } }, required: ["dal", "al"] },
+      execute: async inp => { segna("Guardo nel calendario…"); return cercaAgenda(inp); } },
+    { name: "persona", description: "La scheda di una persona, cercata per nome o per ruolo (per esempio «avvocato»): chi è, contatti, note, promemoria aperti e fatti, impegni recenti e prossimi con lei.",
+      inputSchema: { type: "object", properties: { nome: { type: "string" } }, required: ["nome"] },
+      execute: inp => { segna("Guardo la scheda…"); return schedaPersona(String((inp && inp.nome) || "")); } },
+    { name: "cerca_dati", description: "Cerca una parola fra tutti gli altri dati di Coach: promemoria sulle persone (anche quelli fatti), scadenze, cose che aspetta, progetti, cose da programmare, cose che si ripetono, promemoria, cose da tenere a mente, note degli impegni, persone.",
+      inputSchema: { type: "object", properties: { testo: { type: "string" } }, required: ["testo"] },
+      execute: inp => { segna("Cerco fra le tue cose…"); return cercaDati(inp); } },
+    { name: "spazi_liberi", description: "Gli spazi liberi di un giorno qualsiasi fino a tre mesi da oggi, già tolti gli impegni, la strada e le sue regole. Usalo per proporre un orario in un giorno che non è negli SPAZI LIBERI dei dati.",
+      inputSchema: { type: "object", properties: { data: { type: "string", description: "AAAA-MM-GG" }, durata_minuti: { type: "number" }, fascia: { type: "string", enum: ["mattina", "pranzo", "pomeriggio", "sera"] } }, required: ["data"] },
+      execute: inp => { segna("Guardo gli spazi liberi…"); return spaziLiberi(inp); } },
+    { name: "guardaroba", description: "I vestiti che ha (con colore, tessuto, quanto sono formali), gli abbinamenti pronti e i look che ha già messo: per consigli su cosa mettersi.",
+      inputSchema: { type: "object", properties: { occasione: { type: "string", description: "per esempio notaio, visita, cena (facoltativo)" } } },
+      execute: inp => { segna("Guardo nel guardaroba…"); return guardarobaPerClaude(inp); } }
+  ];
+  return lista.slice(0, Math.max(1, lim.maxCount || lista.length));
+}
 
 function istruzioniConversa(rif){
   const nome = segr().nome ? segr().nome.split(" ")[0] : "";
@@ -13402,6 +13701,8 @@ Rispondi SOLO con un oggetto JSON, senza altro testo:
 - "progetto_avanti": quando dice di aver lavorato a un progetto. Campi: titolo (del progetto), ore.
 - "conferma_piano": quando accetta il piano proposto per oggi.
 - "promemoria": una cosa da ricordare in un giorno. Campi: titolo, data.
+- "promemoria_persona": una cosa da dire, chiedere o portare a una persona quando la vede (anche detta per ruolo, per esempio "l'avvocato"). Campi: persona, testo. Gliela ricordo io nel giorno dell'appuntamento.
+- "ricorda": un fatto su di lui da tenere a mente sempre (per esempio "il mio commercialista è Bianchi", "il martedì sera non prendo impegni"). Campi: testo.
 - "attivita": una cosa che si ripete ogni settimana. Campi: titolo, giorni_settimana (0 domenica … 6 sabato), ora.
 - "scadenza": documenti, bollette, assicurazioni, rate. Campi: titolo, data.
 - "attesa": una cosa che aspetta da qualcuno. Campi: cosa, da_chi, entro.
@@ -13411,8 +13712,11 @@ Regole:
 - categoria è una di: visita (una casa da vedere), cantiere, notaio (notaio, banca, commercialista, avvocato), incontro, cena, pranzo, personale, lavoro, libero, altro. importanza: alta, media o bassa.
 - Durate di solito: cena 120 minuti, pranzo 90, visita a una casa 60, incontro 60, telefonata 15.
 - Non proporre mai un orario sopra un altro impegno, e non mettere due proposte nello stesso spazio.
-- Se ti fa una domanda o ti chiede un consiglio, rispondi guardando l'agenda; azioni solo se servono.
-- Non inventare impegni, persone o luoghi che non ti ha detto.
+- Se ti fa una domanda o ti chiede un consiglio, ragiona sui dati e rispondi in modo concreto, come una segretaria esperta; azioni solo se servono.
+- Se ti dice qualcosa che vale sempre (come lavora, cosa preferisce, chi è chi), crea un'azione "ricorda".
+- Non inventare impegni, persone o luoghi che non ti ha detto.${CLAUDE_LIMITI && CLAUDE_LIMITI.tools ? `
+- Se i DATI non bastano (impegni passati o fra più di tre settimane, la scheda di una persona, cose vecchie, i vestiti), usa gli strumenti prima di rispondere.` : ""}
+- La conversazione continua nei giorni: i messaggi vecchi hanno fra parentesi quadre il giorno in cui sono stati scritti.
 
 DATI:
 ${contestoSegretaria({ giorni: 21, rif })}`;
@@ -13474,6 +13778,19 @@ function azioneDa(a, RIF){
     if (!p || !ore) return null;
     return { tipo, on: true, p, titolo: p.titolo, minuti: Math.round(ore * 60) };
   }
+  if (tipo === "promemoria_persona"){
+    const testo = cap(String(a.testo || a.titolo || "").trim());
+    const chi = String(a.persona || (persone[0] || "")).trim();
+    if (!testo || !chi) return null;
+    const r = rDaClaude({ tipo: "da_dire", titolo: testo, a_chi: chi });
+    const p = trovaPersona(chi);
+    return { tipo: "frase", on: true, r, titolo: testo, sottotitolo: p ? `a ${p.nome}, quando lo vedi` : `a una persona nuova: ${pulisciNome(chi)}` };
+  }
+  if (tipo === "ricorda"){
+    const testo = cap(String(a.testo || a.titolo || "").trim());
+    if (!testo) return null;
+    return { tipo: "ricorda", on: true, titolo: testo };
+  }
   if (tipo === "conferma_piano"){
     const p = pianoDelGiorno(T);
     if (!p || p.stato === "confermato") return null;
@@ -13508,11 +13825,12 @@ function azioneFrase(a){
   if (a.tipo === "progetto") return `${a.minuti ? `${Math.round(a.minuti / 6) / 10} ore` : "ore da stimare"}${a.entro ? ` · entro ${dataParlata(a.entro)}` : ""}`;
   if (a.tipo === "progetto_avanti") return `+${minutiCorti(a.minuti)} di lavoro`;
   if (a.tipo === "conferma_piano") return "confermo le proposte del piano";
-  if (a.tipo === "frase") return anteprimaFrase(a.r).filter(([k]) => k !== "Cosa").map(([k, v]) => `${k.toLowerCase()} ${v}`).join(" · ");
+  if (a.tipo === "frase") return a.sottotitolo || anteprimaFrase(a.r).filter(([k]) => k !== "Cosa").map(([k, v]) => `${k.toLowerCase()} ${v}`).join(" · ");
+  if (a.tipo === "ricorda") return "lo tengo a mente";
   return "";
 }
 const AZIONE_NOME = { evento: "Appuntamento", da_programmare: "Da programmare", sposta: "Spostamento", cancella: "Da togliere", progetto: "Progetto",
-  progetto_avanti: "Progetto", conferma_piano: "Piano", frase: "Da segnare" };
+  progetto_avanti: "Progetto", conferma_piano: "Piano", frase: "Da segnare", ricorda: "Da ricordare" };
 function azioneAvviso(a){
   if (a.tipo === "evento" && !a.allDay){
     const sopra = busyLabeled(a.d).filter(b => b.src !== "viaggio" && b.s < a.e && a.s < b.e).map(b => `${b.label} ${toHHMM(b.s)}–${toHHMM(b.e)}`);
@@ -13570,6 +13888,9 @@ async function eseguiAzioni(azioni){
       } else if (a.tipo === "frase"){
         salvaFrase(a.r, true);
         fatte.push(a.titolo);
+      } else if (a.tipo === "ricorda"){
+        memoriaMetti(a.titolo);
+        fatte.push(a.titolo);
       }
     } catch(e){ errori.push(`${a.titolo}: ${e && e.message ? e.message : e}`); }
   }
@@ -13598,10 +13919,12 @@ async function conversaManda(testo, voce){
   testo = String(testo || "").trim();
   if (!testo) return;
   const c = conversa();
-  c.turni.push({ chi: "io", testo, at: Date.now() });
-  const turno = { chi: "lei", testo: "", azioni: [], stato: "pensa", at: Date.now(), voce: !!voce };
+  const prima = c.turni.slice();
+  c.turni.push({ id: nuovoId("cv"), chi: "io", testo, at: Date.now() });
+  const tier = claudePronto() ? tierPer("conversa", testo) : "quick";
+  const turno = { id: nuovoId("cv"), chi: "lei", testo: "", azioni: [], stato: "pensa", at: Date.now(), voce: !!voce, lento: tier !== "quick" };
   c.turni.push(turno);
-  if (c.turni.length > 40) c.turni.splice(0, c.turni.length - 40);
+  if (c.turni.length > CV_MAX) c.turni.splice(0, c.turni.length - CV_MAX);
   salvaSolo();
   conversaDisegna();
   if (!claudePronto()){
@@ -13616,19 +13939,38 @@ async function conversaManda(testo, voce){
     return;
   }
   CONV_CTL = new AbortController();
+  let grezzo = "";
   try {
-    const storia = c.turni.slice(0, -2).slice(-12).filter(t => t.testo);
+    await claudeLimiti();
+    const { msgs, nota, giorno } = storiaPerClaude(prima.slice(-CV_STORIA));
     const rif = {};
-    const input = [{ role: "user", content: istruzioniConversa(rif) }];
-    for (const t of storia){
-      if (t.chi === "io") input.push({ role: "user", content: t.testo });
-      else input.push({ role: "assistant", content: t.testo + (t.azioni && t.azioni.length ? `\n[azioni proposte: ${t.azioni.map(a => `${AZIONE_NOME[a.tipo] || a.tipo} ${a.titolo}`).join("; ")}; ${t.stato === "confermate" ? "confermate ed eseguite" : t.stato === "lasciate" ? "non confermate" : "in attesa"}]` : "") });
+    const input = [{ role: "user", content: istruzioniConversa(rif) }, ...msgs,
+      { role: "user", content: nota + (giorno && giorno !== today() ? "[oggi] " : "") + testo }];
+    const strumenti = domandaVera(testo) ? strumentiSegretaria(turno) : null;
+    const opts = { tier: tierPer("conversa", testo), signal: CONV_CTL.signal, cache: false, json: true,
+      onText: ({ text }) => { grezzo = text; const r = estraiRisposta(text); if (r){ turno.testo = r; const b = document.getElementById("cv-pensa"); if (b){ b.textContent = r; b.classList.remove("attesa"); } } } };
+    if (strumenti) opts.tools = strumenti;
+    let j;
+    try {
+      try { j = await claudeChiedi(input, opts); }
+      catch(e){
+        // qui Claude non può usare gli strumenti: rifaccio la domanda senza
+        if (e.code !== "tools_unavailable" || !opts.tools) throw e;
+        if (CLAUDE_LIMITI) CLAUDE_LIMITI.tools = null;
+        delete opts.tools;
+        j = await claudeChiedi(input, opts);
+      }
     }
-    input.push({ role: "user", content: testo });
-    const j = await claudeJSON(input, { tier: claudeConf().tier || "quick", signal: CONV_CTL.signal, cache: false });
+    catch(e){
+      // ha risposto a parole invece che in JSON: tengo le parole
+      if (e.code !== "invalid_json") throw e;
+      const t = estraiRisposta(e.parziale) || String(e.parziale || "").replace(/```[a-z]*|```/g, "").trim();
+      if (!t || /^[\[{]/.test(t)) throw e;
+      j = { risposta: t.slice(0, 2000), azioni: [] };
+    }
     turno.testo = String((j && j.risposta) || "").trim() || "Fatto.";
     const azioni = (Array.isArray(j && j.azioni) ? j.azioni : []).map(a => azioneDa(a, rif)).filter(Boolean);
-    // due proposte nello stesso posto: la seconda la ricalcolo
+    // due proposte nello stesso posto, o una proposta non libera: la ricalcolo
     const occupati = {}, corretti = [];
     const grezze = Array.isArray(j && j.azioni) ? j.azioni : [];
     for (const a of azioni) if (a.tipo === "da_programmare"){
@@ -13644,15 +13986,19 @@ async function conversaManda(testo, voce){
     if (corretti.length) turno.testo += `\nUn orario non era libero, ho corretto: ${elenco(corretti)}.`;
     turno.stato = azioni.length ? "da confermare" : "fatto";
   } catch(e){
-    turno.testo = e && e.code === "cancelled" ? "Va bene, lascio stare." : (e && e.message ? e.message : "Claude non risponde.");
-    turno.errore = true;
+    const parziale = estraiRisposta(e && e.parziale) || estraiRisposta(grezzo);
+    turno.testo = e && e.code === "cancelled" ? (parziale ? parziale + " [fermata]" : "Va bene, lascio stare.") : (e && e.message ? e.message : "Claude non risponde.");
+    turno.errore = !(e && e.code === "cancelled");
     turno.stato = "fatto";
     // intanto quello che capisco io
     if (!(e && e.code === "cancelled")){
       const lista = capisciTutto(testo);
       if (lista.length){ turno.testo += " Intanto ecco cosa ho capito io."; turno.azioni = lista.map(r => ({ tipo: "frase", on: true, r, titolo: r.titolo || (r.voci || []).join(", ") })); turno.stato = "da confermare"; }
     }
-  } finally { CONV_CTL = null; }
+  } finally { CONV_CTL = null; delete turno.lavoro; }
+  const vivo = turnoVivo(turno);
+  if (vivo && vivo !== turno) Object.assign(vivo, turno);
+  else if (!vivo && conversa().turni.length) conversa().turni.push(turno);
   save();
   conversaDisegna();
   if (voce && segr().voce !== false && turno.testo) { parla(turno.testo); aggiornaTastoParla(); }
@@ -13660,7 +14006,9 @@ async function conversaManda(testo, voce){
 
 function turnoHTML(t, i){
   if (t.chi === "io") return `<div class="cvio">${esc(t.testo)}</div>`;
-  if (t.stato === "pensa") return `<div class="cvlei attesa">Ci penso…</div><div class="btnrow" style="margin-top:4px"><button class="btn ghost" id="cv-ferma">Lascia stare</button></div>`;
+  if (t.stato === "pensa") return `<div class="cvlei${t.testo ? "" : " attesa"}" id="cv-pensa">${esc(t.testo || t.lavoro || (t.lento ? "Ci ragiono…" : "Ci penso…"))}</div>
+    ${t.lento && !t.testo ? `<div class="rmeta" style="margin:-2px 0 0 4px">Ci ragiona il modello più intelligente: può volerci mezzo minuto.</div>` : ""}
+    <div class="btnrow" style="margin-top:4px"><button class="btn ghost" id="cv-ferma">Lascia stare</button></div>`;
   const az = t.azioni || [];
   const aperte = t.stato === "da confermare";
   const ultima = i === conversa().turni.length - 1;
@@ -13676,22 +14024,34 @@ function turnoHTML(t, i){
           ${aperte && a.tipo === "da_programmare" ? `<div class="why" style="margin:7px 0 0"><button data-cvaltro="${i}:${k}">Altro orario</button>${a.proposta ? `<button data-cvdopo="${i}:${k}" class="${a.metti === false ? "on" : ""}">${a.metti === false ? "Resta da programmare" : "Lascialo da programmare"}</button>` : ""}</div>` : ""}
         </div></div>`).join("")}
       ${aperte ? `<div class="btnrow"><button class="btn primary" id="cv-ok-${i}" style="flex:2">${az.some(a => a.on && (a.tipo === "evento" || a.tipo === "sposta" || a.tipo === "cancella" || (a.tipo === "da_programmare" && a.proposta && a.metti !== false))) && calDiretto() ? "Conferma e metti su Google" : "Conferma"}</button><button class="btn ghost" id="cv-no-${i}" style="flex:1">Lascia stare</button></div>`
-        : `<div class="rmeta" style="padding:8px 14px">${t.stato === "confermate" ? esc(t.esito || "Fatto.") : "Lasciate stare."}</div>`}
+        : `<div class="rmeta" style="padding:8px 14px">${t.stato === "confermate" ? esc(t.esito || "Fatto.") : t.stato === "in corso" ? "Le sto facendo…" : t.stato === "scadute" ? "Non confermate in tempo: se servono ancora, ridimmele." : "Lasciate stare."}</div>`}
     </div>` : ""}`;
 }
+let CV_TUTTI = false;
 function conversaHTML(){
   const c = conversa();
-  const turni = c.turni.slice(-8);
+  const quanti = CV_TUTTI ? 40 : 8;
+  const turni = c.turni.slice(-quanti);
   const da = c.turni.length - turni.length;
+  const T = today(), ieri = addDays(T, -1);
+  let giorno = da > 0 ? giornoDi(c.turni[da - 1].at) : null;
+  const filo = turni.map((t, k) => {
+    const d = giornoDi(t.at);
+    const sep = d !== giorno && (giorno !== null || d !== T) ? `<div class="cvgiorno">${d === T ? "Oggi" : d === ieri ? "Ieri" : esc(cap(dataParlata(d)))}</div>` : "";
+    giorno = d;
+    return sep + turnoHTML(t, da + k);
+  }).join("");
   return `<div class="card cvbox">
-    ${turni.length ? `<div class="cvfilo">${turni.map((t, k) => turnoHTML(t, da + k)).join("")}</div>` : ""}
+    ${da > 0 && !CV_TUTTI ? `<button class="cvprima" id="cv-prima">Messaggi precedenti</button>` : ""}
+    ${turni.length ? `<div class="cvfilo">${filo}</div>` : ""}
     <div class="cvscrivi">
       ${areaTesto("cv-t", "", turni.length ? "Rispondi…" : "Rispondi, o dimmi cosa segnare…", 2)}
       <div class="btnrow" style="margin-top:8px">
         ${puoDettare() ? `<button class="btn" id="cv-mic" style="flex:1">Parla</button>` : ""}
         <button class="btn primary" id="cv-invia" style="flex:2">Invia</button>
       </div>
-      ${turni.length ? "" : `<div class="hint" style="margin-top:6px">${IN_CLAUDE ? "Sull'iPhone puoi dettare con il microfono della tastiera." : ""} Esempio: «aggiungimi la visita alla casa di via Roma martedì alle 15, e devo programmare due cene: una col commercialista e una con Marco».</div>`}
+      ${turni.length ? `<div style="text-align:right;margin-top:6px"><button class="cvprima" id="cv-nuova">Ricomincia da capo</button></div>`
+        : `<div class="hint" style="margin-top:6px">${IN_CLAUDE ? "Sull'iPhone puoi dettare con il microfono della tastiera." : ""} Esempio: «aggiungimi la visita alla casa di via Roma martedì alle 15, e devo programmare due cene: una col commercialista e una con Marco». Puoi anche farle domande: «come incastro il notaio giovedì?», «quando ho visto l'avvocato l'ultima volta?».</div>`}
     </div>
   </div>`;
 }
@@ -13716,7 +14076,10 @@ function bindConversa(){
     detta(t => { const testo = String(t || "").trim(); if (!testo) return; ta.value = (ta.value.trim() ? ta.value.trim() + " " : "") + testo; invia(true); },
       on => { mic.classList.toggle("ascolta", on); mic.textContent = on ? "Ti ascolto…" : "Parla"; }, { lunga: true });
   };
-  const ferma = document.getElementById("cv-ferma"); if (ferma) ferma.onclick = () => { if (CONV_CTL) CONV_CTL.abort(); };
+  const ferma = document.getElementById("cv-ferma"); if (ferma) ferma.onclick = () => { if (CONV_CTL) CONV_CTL.abort(); else { const t = c.turni[c.turni.length - 1]; if (t && t.stato === "pensa"){ t.stato = "fatto"; t.testo = t.testo || "Va bene, lascio stare."; salvaSolo(); conversaDisegna(); } } };
+  const prima = document.getElementById("cv-prima"); if (prima) prima.onclick = () => { CV_TUTTI = true; conversaDisegna(); };
+  const nuova = document.getElementById("cv-nuova");
+  if (nuova) nuova.onclick = () => { if (!confirm("Ricomincio da capo? I messaggi di prima si cancellano; quello che hai già confermato resta, e anche le cose che tengo a mente.")) return; if (CONV_CTL) CONV_CTL.abort(); S.conversa = { turni: [] }; CV_TUTTI = false; save(); conversaDisegna(); };
   document.querySelectorAll("[data-cvleggi]").forEach(b => b.onclick = () => { if (PARLA_ORA){ taci(); aggiornaTastoParla(); return; } const t = c.turni[+b.dataset.cvleggi]; if (t){ sbloccaVoce(); parla(t.testo); aggiornaTastoParla(); } });
   document.querySelectorAll("[data-cvon]").forEach(b => b.onclick = () => { const [i, k] = b.dataset.cvon.split(":").map(Number); const a = c.turni[i] && c.turni[i].azioni[k]; if (a){ a.on = !a.on; salvaSolo(); conversaDisegna(); } });
   document.querySelectorAll("[data-cvdopo]").forEach(b => b.onclick = () => { const [i, k] = b.dataset.cvdopo.split(":").map(Number); const a = c.turni[i] && c.turni[i].azioni[k]; if (a){ a.metti = a.metti === false ? true : false; salvaSolo(); conversaDisegna(); } });
@@ -13724,11 +14087,14 @@ function bindConversa(){
   c.turni.forEach((t, i) => {
     const ok = document.getElementById("cv-ok-" + i), no = document.getElementById("cv-no-" + i);
     if (ok) ok.onclick = async () => {
+      if (t.stato !== "da confermare") return;
       ok.disabled = true; ok.textContent = "Faccio…";
+      t.stato = "in corso"; t.inCorsoAt = Date.now();
       const r = await eseguiAzioni(t.azioni);
-      t.stato = "confermate";
-      t.esito = r.errori.length ? `Fatto in parte. Non è andato: ${r.errori.join("; ")}.` : r.google ? (r.andati === r.google ? `Fatto: ${r.andati === 1 ? "è" : `${r.andati} cose sono`} sul tuo Google Calendar.` : `Fatto, ma ${r.google - r.andati} non sono andate su Google: le trovi fra le cose da programmare.`) : "Fatto.";
-      save(); render(); toast(t.esito);
+      const v = turnoVivo(t) || t;
+      v.stato = "confermate";
+      v.esito = r.errori.length ? `Fatto in parte. Non è andato: ${r.errori.join("; ")}.` : r.google ? (r.andati === r.google ? `Fatto: ${r.andati === 1 ? "è" : `${r.andati} cose sono`} sul tuo Google Calendar.` : `Fatto, ma ${r.google - r.andati} non sono andate su Google: le trovi fra le cose da programmare.`) : "Fatto.";
+      save(); render(); toast(v.esito);
     };
     if (no) no.onclick = () => { t.stato = "lasciate"; save(); conversaDisegna(); };
   });
@@ -13805,6 +14171,212 @@ function gdDescrivi(c){
 // i capi per Claude, una riga ciascuno
 const gdCapiTesto = () => gd().capi.map(c => `- id ${c.id}: ${GD_TIPI[c.tipo] || c.tipo} "${c.nome}"; ${gdDescrivi(c) || "senza dettagli"}; formalità ${c.formalita || 3}/5; stagioni ${(c.stagioni || []).join(", ") || "tutte"}${c.note ? `; note: ${c.note}` : ""}`).join("\n");
 
+/* --- i look che hai messo: l'archivio, ognuno in un'unica foto --- */
+const gdLook = () => { const g = gd(); if (!Array.isArray(g.look)) g.look = []; return g.look; };
+const GD_ORDINE = GD_GRUPPI.reduce((l, [, tipi]) => l.concat(tipi), []);
+const gdOrdina = ids => (ids || []).map(gdCapo).filter(Boolean).sort((a, b) => GD_ORDINE.indexOf(a.tipo) - GD_ORDINE.indexOf(b.tipo));
+const gdNomi = ids => (ids || []).map(id => (gdCapo(id) || {}).nome).filter(Boolean).join(", ");
+function gdImmagine(src){
+  return new Promise(ok => {
+    if (!src){ ok(null); return; }
+    const img = new Image();
+    img.onload = () => ok(img.naturalWidth ? img : null);
+    img.onerror = () => ok(null);
+    img.src = src;
+  });
+}
+// una foto sola con tutti i capi, come appoggiati su un tavolo: sopra la giacca e la camicia, poi pantaloni,
+// scarpe e accessori; sotto ogni capo il suo nome, in alto il giorno e l'impegno
+async function gdCollage(capi, titolo){
+  const W = 1080, M = 44, G = 24, CAP_H = 50, TOP = titolo ? 112 : M;
+  const n = Math.max(1, capi.length);
+  const pieno = n % 2 === 1;
+  const cw2 = (W - 2 * M - G) / 2;
+  const celle = [];
+  let y = TOP;
+  if (pieno){ const h = Math.round(cw2 * 1.05); celle.push({ x: M, y, w: W - 2 * M, h }); y += h + CAP_H + G; }
+  for (let k = 0; k < n - (pieno ? 1 : 0); k++){
+    const col = k % 2;
+    celle.push({ x: M + col * (cw2 + G), y, w: cw2, h: cw2 });
+    if (col === 1) y += cw2 + CAP_H + G;
+  }
+  const H = Math.round(y - G + M);
+  const cv = document.createElement("canvas");
+  cv.width = W; cv.height = H;
+  const x = cv.getContext("2d");
+  x.fillStyle = "#f4f1ec"; x.fillRect(0, 0, W, H);
+  if (titolo){
+    x.fillStyle = "#2a2926"; x.font = "36px Georgia, 'Times New Roman', serif"; x.textAlign = "center"; x.textBaseline = "middle";
+    x.fillText(titolo.length > 48 ? titolo.slice(0, 47) + "…" : titolo, W / 2, TOP / 2 + 4, W - 2 * M);
+  }
+  const imgs = await Promise.all(capi.map(c => gdImmagine(gdImg(c))));
+  capi.forEach((c, i) => {
+    const r = celle[i];
+    x.fillStyle = "#ffffff";
+    if (typeof x.roundRect === "function"){ x.beginPath(); x.roundRect(r.x, r.y, r.w, r.h, 18); x.fill(); } else x.fillRect(r.x, r.y, r.w, r.h);
+    const img = imgs[i], pad = 18;
+    if (img){
+      const k = Math.min((r.w - 2 * pad) / img.naturalWidth, (r.h - 2 * pad) / img.naturalHeight);
+      const w = img.naturalWidth * k, h = img.naturalHeight * k;
+      x.drawImage(img, r.x + (r.w - w) / 2, r.y + (r.h - h) / 2, w, h);
+    } else {
+      x.fillStyle = "#b9b4ab"; x.font = "28px system-ui, -apple-system, 'Segoe UI', sans-serif"; x.textAlign = "center"; x.textBaseline = "middle";
+      x.fillText((GD_TIPI[c.tipo] || "Capo").toUpperCase(), r.x + r.w / 2, r.y + r.h / 2, r.w - 2 * pad);
+    }
+    const nome = String(c.nome || GD_TIPI[c.tipo] || "");
+    x.fillStyle = "#57534d"; x.font = "25px system-ui, -apple-system, 'Segoe UI', sans-serif"; x.textAlign = "center"; x.textBaseline = "top";
+    x.fillText(nome.length > 34 ? nome.slice(0, 33) + "…" : nome, r.x + r.w / 2, r.y + r.h + 12, r.w);
+  });
+  return new Promise((ok, no) => cv.toBlob(b => b ? ok(b) : no(new Error("La foto del look non si è creata.")), "image/jpeg", 0.88));
+}
+const gdTitoloLook = l => `${cap(dataParlata(l.d))}${l.impegno ? ` · ${nomeCorto(l.impegno)}` : ""}`;
+const GD_FOTO_IN_CORSO = {}, GD_FOTO_NO = {};
+async function gdFotoLook(look){
+  if (!CAP.assets || GD_FOTO_IN_CORSO[look.id]) return;
+  GD_FOTO_IN_CORSO[look.id] = true;
+  try {
+    const blob = await gdCollage(gdOrdina(look.capi), gdTitoloLook(look));
+    const id = await fotoCarica(blob);
+    const l = gdLook().find(y => y.id === look.id);     // lo stato può essere stato riletto intanto
+    if (!l){ fotoTogli(id); return; }
+    if (l.foto && l.foto !== id) fotoTogli(l.foto);
+    l.foto = id; l.fotoCapi = l.capi.slice().sort().join(",");
+    save();
+  } catch(e){ GD_FOTO_NO[look.id] = (e && e.message) || "errore"; }
+  finally {
+    delete GD_FOTO_IN_CORSO[look.id];
+    if (TAB === "guardaroba" && !document.querySelector(".sheet")) render();
+  }
+}
+// segna un look messo: resta nell'archivio, e fra qualche secondo ha la sua foto
+function gdSegnaLook(o){
+  const g = gd();
+  const capi = [...new Set((o.capi || []).filter(id => gdCapo(id)))];
+  if (!capi.length) return null;
+  const look = { id: nuovoId("lk"), d: o.d || today(), capi, ab: o.ab || null, impegno: String(o.impegno || "").trim().slice(0, 80),
+    cat: o.cat || null, nota: String(o.nota || "").trim().slice(0, 200), foto: null, at: Date.now() };
+  gdLook().push(look);
+  if (look.ab){ g.usati = g.usati || {}; g.usati[look.d] = look.ab; }
+  save();
+  gdFotoLook(look);
+  return look;
+}
+function gdLookHTML(l){
+  if (l.foto) return `<img class="gdlookimg" src="${esc(fotoUrl(l.foto))}" alt="Il look di ${esc(dataParlata(l.d))}" loading="lazy">`;
+  return `<div class="gdlookgriglia">${gdOrdina(l.capi).map(c => `<div class="gdpezzo">${gdMiniHTML(c)}<div class="rmeta">${esc(c.nome)}</div></div>`).join("")}</div>`;
+}
+// il guardaroba per la segretaria (lo strumento "guardaroba" della conversazione)
+function guardarobaPerClaude(inp){
+  const g = gd();
+  if (!g.capi.length) return "Non ha ancora messo vestiti nel guardaroba.";
+  const occ = String((inp && inp.occasione) || "").trim().toLowerCase();
+  const ab = (g.abbinamenti || []).filter(a => !a.no && (!occ || !GD_OCCASIONI.includes(occ) || a.occasioni.includes(occ))).slice(0, 15)
+    .map(a => `- ${a.nome}: ${gdNomi(a.capi)}${a.preferito ? " (preferito)" : ""}${a.occasioni.length ? ` [${a.occasioni.join(", ")}]` : ""}`);
+  const looks = gdLook().slice().sort((a, b) => b.d.localeCompare(a.d)).slice(0, 12).map(l => `- ${l.d}${l.impegno ? ` (${l.impegno})` : ""}: ${gdNomi(l.capi)}${l.nota ? `; nota: ${l.nota}` : ""}`);
+  return `STILE: ${g.stile || "classico"}\nCAPI:\n${gdCapiTesto()}${ab.length ? `\nABBINAMENTI PRONTI:\n${ab.join("\n")}` : ""}${looks.length ? `\nLOOK GIÀ MESSI:\n${looks.join("\n")}` : ""}`.slice(0, 30000);
+}
+
+/* --- tanti capi insieme: una foto dopo l'altra, Claude le guarda e le compila --- */
+async function gdTanti(files){
+  files = (files || []).filter(f => f && (/^image\//.test(f.type) || /\.(jpe?g|png|webp|heic|heif|gif)$/i.test(f.name || "")));
+  if (!files.length) return;
+  let ferma = false;
+  const fatti = [], errori = [];
+  const f = foglio(`<div id="gdt"></div>`);
+  const disegna = st => {
+    const box = f.querySelector("#gdt");
+    if (!box) return;
+    box.innerHTML = `<h3>${st.fine ? (fatti.length ? "Fatto" : "Non è andata") : `Capo ${st.i} di ${files.length}`}</h3>
+      <div class="hint" style="margin:-8px 0 12px">${esc(st.testo || "")}</div>
+      ${fatti.length ? `<div class="gdgriglia">${fatti.map(c => `<button class="gdcapo" data-gdtc="${c.id}">${gdMiniHTML(c, true)}<div class="gdnome">${esc(c.nome)}</div><div class="rmeta">${esc(gdDescrivi(c) || GD_TIPI[c.tipo] || "")}${c.daControllare ? " · da controllare" : ""}</div></button>`).join("")}</div>` : ""}
+      <div class="btnrow">${st.fine ? `<button class="btn primary wide" id="gdt-ok">Ho finito</button>` : `<button class="btn ghost wide" id="gdt-ferma"${ferma ? " disabled" : ""}>${ferma ? "Mi fermo dopo questo…" : "Fermati dopo questo"}</button>`}</div>
+      ${st.fine && fatti.length ? `<div class="hint">Tocca un capo per correggerlo. Quando li hai messi tutti, prepara gli abbinamenti.</div>` : ""}`;
+    const fe = box.querySelector("#gdt-ferma"); if (fe) fe.onclick = () => { ferma = true; disegna(st); };
+    const ok = box.querySelector("#gdt-ok"); if (ok) ok.onclick = () => { f.remove(); GDSUB = "capi"; render(); };
+    box.querySelectorAll("[data-gdtc]").forEach(b => b.onclick = () => gdApriCapo(b.dataset.gdtc));
+  };
+  for (let i = 0; i < files.length && !ferma; i++){
+    disegna({ i: i + 1, testo: "Preparo la foto…" });
+    let blob;
+    try { blob = await fotoRiduci(files[i], 1280); } catch(e){ errori.push(`${files[i].name || "una foto"} non si legge`); continue; }
+    let j = null;
+    if (claudePronto()){
+      disegna({ i: i + 1, testo: "Claude guarda la foto…" });
+      try { j = await gdClaudeFoto(blob, ""); } catch(e){ if (e && e.code === "rate_limited") errori.push("Claude per ora non può: gli altri li compili tu"); }
+    }
+    const c = { id: nuovoId("cp"), nome: "", tipo: "camicia", colore: "", colori: [], fantasia: "", tessuto: "", formalita: 3, stagioni: [], note: "", foto: null, creato: today(), ...(j || {}) };
+    if (!j) c.daControllare = true;
+    if (!c.nome) c.nome = `Capo ${gd().capi.length + 1}`;
+    disegna({ i: i + 1, testo: "Salvo la foto…" });
+    try {
+      if (CAP.assets) c.foto = await fotoCarica(blob);
+      else { const mini = await fotoRiduci(blob, 320); c.mini = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(mini); }); }
+    } catch(e){ errori.push(`${c.nome}: ${e && e.message ? e.message : "la foto non si è salvata"}`); continue; }
+    gd().capi.push(c);
+    fatti.push(c);
+    save();
+  }
+  disegna({ fine: true, testo: `${fatti.length} ${fatti.length === 1 ? "capo aggiunto" : "capi aggiunti"}${ferma && fatti.length < files.length ? ` su ${files.length}` : ""}.${errori.length ? ` Non sono andati: ${[...new Set(errori)].join("; ")}.` : ""}` });
+  if (TAB === "guardaroba") render();
+}
+
+// segnare o rivedere un look
+function gdApriLook(id){
+  const g = gd();
+  const vecchio = id ? gdLook().find(l => l.id === id) : null;
+  const imp0 = gdImpegnoDi(today());
+  const l = vecchio ? { ...vecchio, capi: vecchio.capi.slice() } : { d: today(), capi: [], impegno: imp0.titolo || "", cat: imp0.cat, nota: "" };
+  const f = foglio(`<div id="gdl"></div>`);
+  const disegna = msg => {
+    const box = f.querySelector("#gdl");
+    box.innerHTML = `<h3>${vecchio ? esc(gdTitoloLook(vecchio)) : "Cosa hai messo"}</h3>
+      ${vecchio ? `<div class="gdfoto">${gdLookHTML(vecchio)}</div>` : `<div class="hint" style="margin:-8px 0 10px">Scegli i capi: ne faccio un'unica foto e resta nell'archivio.</div>`}
+      ${msg ? `<div class="hint" style="color:${msg.err ? "var(--warn)" : "var(--accent)"}">${esc(msg.t)}</div>` : ""}
+      <div class="field" style="margin-top:12px"><label for="gdl-d">Il giorno</label><input type="date" id="gdl-d" value="${esc(l.d)}"></div>
+      <div class="field"><label for="gdl-imp">Per cosa</label><input type="text" id="gdl-imp" value="${esc(l.impegno || "")}" placeholder="Per esempio: notaio, cena con Marco"></div>
+      <div class="field"><label>I capi${l.capi.length ? ` (${l.capi.length})` : ""}</label>
+        ${g.capi.length ? GD_GRUPPI.map(([nome, tipi]) => { const capi = g.capi.filter(c => tipi.includes(c.tipo)); return capi.length ? `<div class="rmeta" style="margin:8px 0 5px">${nome}</div><div class="gdscegli">${capi.map(c => `<button class="gdsc${l.capi.includes(c.id) ? " on" : ""}" data-gdlc="${c.id}">${gdMiniHTML(c)}<span>${esc(c.nome)}</span></button>`).join("")}</div>` : ""; }).join("")
+          : `<div class="empty">Il guardaroba è vuoto: prima aggiungi i capi.</div>`}
+      </div>
+      <div class="field"><label for="gdl-nota">Note</label><input type="text" id="gdl-nota" value="${esc(l.nota || "")}" placeholder="com'è andato, cosa cambieresti"></div>
+      <div class="btnrow"><button class="btn primary" id="gdl-ok" style="flex:2">${vecchio ? "Salva" : "Salva il look"}</button><button class="btn ghost" id="gdl-x" style="flex:1">Annulla</button></div>
+      ${vecchio ? `<div class="btnrow">${CAP.assets ? `<button class="btn" id="gdl-foto" style="flex:1">Rifai la foto</button>` : ""}${vecchio.foto && CAP.downloads ? `<button class="btn" id="gdl-scarica" style="flex:1">Scarica la foto</button>` : ""}</div>
+        <div class="btnrow"><button class="btn ghost wide" id="gdl-del" style="color:var(--warn)">Togli dall'archivio</button></div>` : ""}`;
+    const q = s => box.querySelector(s);
+    const leggi = () => { l.d = q("#gdl-d").value || l.d; l.impegno = q("#gdl-imp").value.trim(); l.nota = q("#gdl-nota").value.trim(); };
+    box.querySelectorAll("[data-gdlc]").forEach(b => b.onclick = () => { leggi(); const k = b.dataset.gdlc; l.capi = l.capi.includes(k) ? l.capi.filter(x => x !== k) : l.capi.concat([k]); disegna(); });
+    q("#gdl-x").onclick = () => f.remove();
+    q("#gdl-ok").onclick = () => {
+      leggi();
+      if (!l.capi.length){ disegna({ t: "Scegli almeno un capo.", err: true }); return; }
+      if (!vecchio){ gdSegnaLook(l); f.remove(); GDSUB = "archivio"; TAB = "guardaroba"; render(); toast("Segnato: preparo la foto del look."); return; }
+      const v = gdLook().find(y => y.id === vecchio.id);
+      if (v){
+        const rifai = v.capi.slice().sort().join(",") !== l.capi.slice().sort().join(",") || v.d !== l.d || v.impegno !== l.impegno;
+        Object.assign(v, { d: l.d, impegno: l.impegno, nota: l.nota, capi: l.capi.slice() });
+        save();
+        if (rifai) gdFotoLook(v);
+      }
+      f.remove(); render();
+    };
+    if (q("#gdl-foto")) q("#gdl-foto").onclick = () => { const v = gdLook().find(y => y.id === vecchio.id); if (v){ delete GD_FOTO_NO[v.id]; gdFotoLook(v); } f.remove(); toast("Rifaccio la foto del look."); render(); };
+    if (q("#gdl-scarica")) q("#gdl-scarica").onclick = async () => {
+      let blob = null;
+      try { const r = await fetch(fotoUrl(vecchio.foto)); if (r.ok) blob = await r.blob(); } catch(e){}
+      try { if (!blob) blob = await gdCollage(gdOrdina(vecchio.capi), gdTitoloLook(vecchio)); await CAP.downloads.save({ filename: `look-${vecchio.d}.jpg`, data: blob }); }
+      catch(e){ if (!(e && e.code === "cancelled")) disegna({ t: "La foto non si è scaricata.", err: true }); }
+    };
+    if (q("#gdl-del")) q("#gdl-del").onclick = () => {
+      if (!confirm("Tolgo questo look dall'archivio?")) return;
+      const g2 = gd();
+      g2.look = gdLook().filter(y => y.id !== vecchio.id);
+      if (vecchio.foto) fotoTogli(vecchio.foto);
+      save(); f.remove(); render();
+    };
+  };
+  disegna();
+}
+
 /* --- Claude guarda la foto --- */
 async function gdClaudeFoto(blob, testo){
   const prompt = `Questa è la foto di un capo d'abbigliamento da uomo del mio guardaroba.${testo ? ` Io lo descrivo così: "${testo}".` : ""}
@@ -13813,7 +14385,7 @@ Descrivilo per un'app che prepara gli abbinamenti. Rispondi SOLO con un JSON cos
  "colore": "colore principale in italiano", "colori": ["altri colori"], "fantasia": "tinta unita, righe, quadri, pied de poule, fantasia…",
  "tessuto": "lana, cotone, lino, denim, pelle, cashmere…", "formalita": numero da 1 (sportivo) a 5 (elegante),
  "stagioni": fra "primavera","estate","autunno","inverno", "note": "una frase su come abbinarlo, al massimo 20 parole"}`;
-  const j = await claudeJSON(prompt, { images: [blob], tier: "quick", cache: false });
+  const j = await claudeJSON(prompt, { images: [blob], tier: tierPer("foto"), cache: false });
   return gdPulisci(j || {});
 }
 function gdPulisci(j){
@@ -13832,13 +14404,13 @@ function gdPulisci(j){
 
 /* --- Claude prepara gli abbinamenti --- */
 async function gdClaudeAbbinamenti(){
-  const g = gd();
+  let g = gd();
   const prompt = `Sei un consulente di stile per un uomo. Il suo stile: ${g.stile || "classico, con i colori abbinati bene"}.
 Lavora come dipendente e ha un'attività di flipping immobiliare: visite a case e cantieri, incontri con agenzie, notai e banche, cene e pranzi di lavoro.
 ${S.moda && S.moda.testo ? `Note sulla stagione (${S.moda.stagione || ""}), da usare con misura, senza inseguire le mode:\n${S.moda.testo}\n` : ""}
 I SUOI CAPI:
 ${gdCapiTesto()}
-
+${gdLook().length ? `\nI LOOK CHE HA GIÀ MESSO (gli sono piaciuti: puoi riproporli e variarli):\n${gdLook().slice(-15).map(l => `- ${l.impegno || l.d}: ${l.capi.filter(id => gdCapo(id)).join(", ")}`).join("\n")}\n` : ""}
 Prepara gli abbinamenti che stanno bene usando SOLO questi capi (cita gli id). Regole:
 - Stile classico: colori che si accordano (per esempio blu con grigio, bianco, azzurro, marrone, cammello, bordeaux), al massimo tre colori principali, scarpe e cintura in armonia.
 - Ogni abbinamento è completo per quello che c'è: qualcosa sopra, qualcosa sotto, le scarpe; capospalla e accessori quando servono. Un completo vale come giacca e pantaloni.
@@ -13848,7 +14420,8 @@ Prepara gli abbinamenti che stanno bene usando SOLO questi capi (cita gli id). R
 Rispondi SOLO con un JSON così:
 {"abbinamenti": [{"nome": "nome breve", "capi": ["id", "id"], "occasioni": ["visita", "incontro"], "perche": "una frase sui colori e sull'occasione"}],
  "mancano": "una o due frasi: i capi che, aggiunti, darebbero più abbinamenti (stile classico)"}`;
-  const j = await claudeJSON(prompt, { tier: claudeConf().tierGuardaroba || "default", cache: false });
+  const j = await claudeJSON(prompt, { tier: tierPer("abbinamenti"), cache: false });
+  g = gd();          // i dati possono essere stati riletti mentre Claude abbinava
   const ids = new Set(g.capi.map(c => c.id));
   const visti = new Set();
   const lista = [];
@@ -13890,6 +14463,7 @@ function gdImpegnoDi(d){
 function gdCandidati(cat, d){
   const g = gd(), st = gdStagione(d);
   const recenti = new Set(Object.entries(g.usati || {}).filter(([dd]) => dd >= addDays(d, -3) && dd < d).map(([, id]) => id));
+  const capiRecenti = new Set(gdLook().filter(l => l.d >= addDays(d, -3) && l.d < d).reduce((x, l) => x.concat(l.capi), []));
   const ok = (g.abbinamenti || []).filter(a => !a.no && a.capi.every(id => gdCapo(id)));
   const punta = a => {
     let p = 0;
@@ -13897,6 +14471,7 @@ function gdCandidati(cat, d){
     else { const f = GD_FORMALE[cat] || 2; const fa = a.capi.map(id => gdCapo(id).formalita || 3); const media = fa.reduce((x, y) => x + y, 0) / fa.length; p += 30 - Math.abs(media - f) * 10; }
     if (a.preferito) p += 15;
     if (recenti.has(a.id)) p -= 40;
+    else if (a.capi.filter(id => capiRecenti.has(id)).length >= 2) p -= 25;
     if (a.capi.some(id => { const c = gdCapo(id); return c.stagioni && c.stagioni.length && !c.stagioni.includes(st); })) p -= 25;
     return p;
   };
@@ -13931,7 +14506,7 @@ function cosaMiMettoHTML(d){
       <div class="rtitle" style="font-size:15.5px">${esc(a.nome)}${a.preferito ? ` <span class="rmeta">· preferito</span>` : ""}</div>
       <div class="gdfila">${a.capi.map(id => { const c = gdCapo(id); return `<div class="gdpezzo">${gdMiniHTML(c)}<div class="rmeta">${esc(c.nome)}</div></div>`; }).join("")}</div>
       ${a.perche ? `<div class="rmeta">${esc(a.perche)}</div>` : ""}
-      ${g2 && g2.messo ? `<div class="rmeta" style="color:var(--done)">Segnato: l'hai messo oggi.</div>` : ""}
+      ${g2 && g2.messo ? `<div class="rmeta" style="color:var(--done)">Segnato: l'hai messo oggi, è nell'archivio dei look.</div>` : ""}
     </div>
     <div class="segbar">
       ${g2 && g2.messo ? "" : `<button class="btn primary" data-gdmesso="${a.id}">L'ho messo</button>`}
@@ -13952,11 +14527,14 @@ function bindCosaMiMetto(root){
   });
   root.querySelectorAll("[data-gdmesso]").forEach(b => b.onclick = () => {
     const g = gd(), d = today();
+    const a = (g.abbinamenti || []).find(x => x.id === b.dataset.gdmesso);
     g.usati = g.usati || {};
     g.usati[d] = b.dataset.gdmesso;
     for (const k of Object.keys(g.usati)) if (k < addDays(d, -60)) delete g.usati[k];
     g.oggi = { ...(g.oggi && g.oggi.d === d ? g.oggi : { d }), id: b.dataset.gdmesso, messo: true };
+    if (a && !gdLook().some(l => l.d === d && l.ab === a.id)){ const imp = gdImpegnoDi(d); gdSegnaLook({ d, capi: a.capi, ab: a.id, impegno: imp.titolo, cat: imp.cat }); }
     save(); render();
+    toast("Segnato: lo trovi nell'archivio dei look.");
   });
 }
 
@@ -13970,11 +14548,13 @@ function renderGuardaroba(){
   let corpo = "";
   if (GDSUB === "capi"){
     corpo = `
-    <div class="btnrow" style="margin-top:4px"><button class="btn primary wide" id="gd-nuovo">Aggiungi un capo</button></div>
+    <div class="btnrow" style="margin-top:4px"><button class="btn primary" id="gd-nuovo" style="flex:1">Aggiungi un capo</button><button class="btn" id="gd-tanti" style="flex:1">Più capi insieme</button></div>
+    <input type="file" id="gd-tanti-file" accept="image/*" multiple style="display:none">
+    <div class="hint">Con «Più capi insieme» scegli tutte le foto che vuoi: Claude le guarda una per una e compila nome, colore e tessuto. Poi le controlli.</div>
     ${g.capi.length ? GD_GRUPPI.map(([nome, tipi]) => {
       const capi = g.capi.filter(c => tipi.includes(c.tipo));
       if (!capi.length) return "";
-      return `<h2>${nome} <span class="hsub">${capi.length}</span></h2><div class="gdgriglia">${capi.map(c => `<button class="gdcapo" data-gdcapo="${c.id}">${gdMiniHTML(c, true)}<div class="gdnome">${esc(c.nome)}</div><div class="rmeta">${esc(gdDescrivi(c) || GD_TIPI[c.tipo] || "")}${c.foto || c.mini ? "" : " · senza foto"}</div></button>`).join("")}</div>`;
+      return `<h2>${nome} <span class="hsub">${capi.length}</span></h2><div class="gdgriglia">${capi.map(c => `<button class="gdcapo" data-gdcapo="${c.id}">${gdMiniHTML(c, true)}<div class="gdnome">${esc(c.nome)}</div><div class="rmeta">${esc(gdDescrivi(c) || GD_TIPI[c.tipo] || "")}${c.foto || c.mini ? "" : " · senza foto"}${c.daControllare ? " · da controllare" : ""}</div></button>`).join("")}</div>`;
     }).join("") : `<div class="card"><div class="empty">Il guardaroba è vuoto. Fotografa un capo alla volta: giacche, camicie, maglioni, pantaloni, scarpe, cravatte. Claude guarda la foto e compila il resto.</div></div>`}`;
   } else if (GDSUB === "abbinamenti"){
     const per = {};
@@ -13989,8 +14569,19 @@ function renderGuardaroba(){
         <div class="rtitle" style="font-size:15px">${esc(a.nome)}</div>
         <div class="gdfila">${a.capi.map(id => { const c = gdCapo(id); return c ? `<div class="gdpezzo">${gdMiniHTML(c)}<div class="rmeta">${esc(c.nome)}</div></div>` : ""; }).join("")}</div>
         ${a.perche ? `<div class="rmeta">${esc(a.perche)}</div>` : ""}
-        <div class="why" style="margin:0"><button class="${a.preferito ? "on" : ""}" data-gdpref="${a.id}">${a.preferito ? "Preferito" : "Mi piace"}</button><button class="${a.no ? "on" : ""}" data-gdno="${a.id}">${a.no ? "Escluso" : "Non mi piace"}</button></div>
+        <div class="why" style="margin:0"><button class="${a.preferito ? "on" : ""}" data-gdpref="${a.id}">${a.preferito ? "Preferito" : "Mi piace"}</button><button class="${a.no ? "on" : ""}" data-gdno="${a.id}">${a.no ? "Escluso" : "Non mi piace"}</button><button data-gdmessoab="${a.id}">L'ho messo oggi</button></div>
       </div>`).join("")}</div>`).join("")}`;
+  } else if (GDSUB === "archivio"){
+    const looks = gdLook().slice().sort((a, b) => b.d.localeCompare(a.d) || (b.at || 0) - (a.at || 0));
+    for (const l of looks.filter(x => !x.foto && !GD_FOTO_IN_CORSO[x.id] && !GD_FOTO_NO[x.id]).slice(0, 3)) setTimeout(() => gdFotoLook(l), 50);
+    corpo = `
+    <div class="btnrow" style="margin-top:4px"><button class="btn primary wide" id="gd-look"${g.capi.length ? "" : " disabled"}>Segna cosa ho messo</button></div>
+    <div class="hint">Ogni look che metti resta qui in un'unica foto: giacca, camicia, pantaloni, scarpe e accessori. Si segna anche da «Cosa mi metto» con «L'ho messo».</div>
+    ${looks.length ? `<div class="gdlooks">${looks.map(l => `<button class="gdlook" data-gdlook="${l.id}">
+        ${gdLookHTML(l)}
+        <div class="gdnome">${esc(cap(dataParlata(l.d)))}</div>
+        <div class="rmeta">${esc(l.impegno || (l.cat && CATEGORIE[l.cat] ? CATEGORIE[l.cat].nome : ""))}${!l.foto && GD_FOTO_IN_CORSO[l.id] ? " · preparo la foto…" : ""}</div>
+      </button>`).join("")}</div>` : `<div class="card"><div class="empty">Ancora nessun look segnato.</div></div>`}`;
   } else {
     corpo = `
     <h2>Il tuo stile</h2>
@@ -14007,16 +14598,27 @@ function renderGuardaroba(){
     </div></div>`;
   }
   el.innerHTML = `<div class="wrap">
-    <header><div class="h-left"><div class="datebig">Guardaroba</div><div class="greet">${g.capi.length} ${g.capi.length === 1 ? "capo" : "capi"} · ${(g.abbinamenti || []).length} abbinamenti</div></div>
+    <header><div class="h-left"><div class="datebig">Guardaroba</div><div class="greet">${g.capi.length} ${g.capi.length === 1 ? "capo" : "capi"} · ${(g.abbinamenti || []).length} abbinamenti · ${gdLook().length} look</div></div>
       <button class="btn ghost" id="gd-torna" style="flex:0 0 auto">← Segretaria</button></header>
-    <div class="chips" style="margin:2px 0 10px">${tab("capi", "I capi")}${tab("abbinamenti", "Gli abbinamenti")}${tab("stile", "Stile")}</div>
-    ${GDSUB !== "stile" ? `<section>${cosaMiMettoHTML(today())}</section>` : ""}
+    <div class="chips" style="margin:2px 0 10px">${tab("capi", "I capi")}${tab("abbinamenti", "Gli abbinamenti")}${tab("archivio", "I look messi")}${tab("stile", "Stile")}</div>
+    ${GDSUB === "capi" || GDSUB === "abbinamenti" ? `<section>${cosaMiMettoHTML(today())}</section>` : ""}
     ${corpo}
   </div>`;
   const q = s => el.querySelector(s);
   el.querySelectorAll("[data-gdsub]").forEach(b => b.onclick = () => { GDSUB = b.dataset.gdsub; render(); });
   q("#gd-torna").onclick = () => { TAB = "oggi"; render(); };
   if (q("#gd-nuovo")) q("#gd-nuovo").onclick = () => gdApriCapo(null);
+  if (q("#gd-tanti")) q("#gd-tanti").onclick = () => q("#gd-tanti-file").click();
+  if (q("#gd-tanti-file")) q("#gd-tanti-file").onchange = () => { const fl = [...(q("#gd-tanti-file").files || [])]; q("#gd-tanti-file").value = ""; gdTanti(fl); };
+  if (q("#gd-look")) q("#gd-look").onclick = () => gdApriLook(null);
+  el.querySelectorAll("[data-gdlook]").forEach(b => b.onclick = () => gdApriLook(b.dataset.gdlook));
+  el.querySelectorAll("[data-gdmessoab]").forEach(b => b.onclick = () => {
+    const a = (gd().abbinamenti || []).find(x => x.id === b.dataset.gdmessoab); if (!a) return;
+    const d = today(), imp = gdImpegnoDi(d);
+    gdSegnaLook({ d, capi: a.capi, ab: a.id, impegno: imp.titolo, cat: imp.cat });
+    gd().oggi = { d, id: a.id, messo: true };
+    save(); GDSUB = "archivio"; render(); toast("Segnato: lo trovi fra i look messi.");
+  });
   el.querySelectorAll("[data-gdcapo]").forEach(b => b.onclick = () => gdApriCapo(b.dataset.gdcapo));
   if (q("#gd-abbina")) q("#gd-abbina").onclick = async () => {
     GD_LAVORA = "abbina"; render();
@@ -14102,6 +14704,7 @@ function gdApriCapo(id){
       }
       const i = g.capi.findIndex(x => x.id === c.id);
       c.creato = c.creato || today();
+      delete c.daControllare;
       if (i >= 0) g.capi[i] = c; else g.capi.push(c);
       if (anteprima) URL.revokeObjectURL(anteprima);
       save(); f.remove(); render();
@@ -15175,15 +15778,17 @@ const CLAUDE_ERRORI = {
   images_unavailable: "Qui Claude non può guardare le foto.",
   image_rejected: "Questa foto non va bene: provane un'altra.",
   upstream_error: "Claude non risponde adesso: riprova fra poco.",
+  tools_unavailable: "Qui Claude non può cercare nei tuoi dati.",
+  invalid_request: "La richiesta a Claude non è andata: riprova.",
   cancelled: "Fermato."
 };
 let CLAUDE_NO = false;      // permesso negato in questa apertura: niente Claude fino alla prossima
-const claudeConf = () => ({ on: true, tier: "quick", ...(S && S.claude || {}) });
+const claudeConf = () => ({ on: true, tier: "auto", ...(S && S.claude || {}) });
 const claudePronto = () => !!(S && CAP.sample && claudeConf().on !== false && !CLAUDE_NO);
 async function claudeChiedi(input, o){
   o = o || {};
   if (!CAP.sample) throw new Error("Claude c'è solo aprendo Coach dentro Claude.");
-  const opts = { modelTier: o.tier || claudeConf().tier || "quick" };
+  const opts = { modelTier: o.tier || tierPer("altro") };
   if (o.images) opts.images = o.images;
   if (o.onText) opts.onText = o.onText;
   if (o.signal) opts.signal = o.signal;
@@ -15201,10 +15806,40 @@ async function claudeChiedi(input, o){
     throw err;
   }
 }
+/* quale Claude risponde. Automatica: gli ordini (segna, sposta, aggiungi) il modello veloce; le domande,
+   i consigli e i problemi da ragionare il più intelligente: quello che usi nell'app di Claude, se la
+   pagina lo può usare, altrimenti il più capace. */
+let CLAUDE_LIMITI = null;
+async function claudeLimiti(){
+  if (CLAUDE_LIMITI) return CLAUDE_LIMITI;
+  try { CLAUDE_LIMITI = (CAP.sample && typeof CAP.sample.limits === "function" ? await CAP.sample.limits() : null) || {}; }
+  catch(e){ CLAUDE_LIMITI = {}; }
+  return CLAUDE_LIMITI;
+}
+const tierMigliore = () => CLAUDE_LIMITI && Array.isArray(CLAUDE_LIMITI.modelTiers) && CLAUDE_LIMITI.modelTiers.includes("inherit") ? "inherit" : "complex";
+const nomeMigliore = () => tierMigliore() === "inherit" ? "lo stesso modello che usi nell'app di Claude" : "il modello più capace di Claude";
+const PAROLE_DOMANDA = /\b(come|cosa|perche|quando|quanto|quanti|quale|quali|dove|chi|conviene|consiglio|consigli|consigliami|secondo te|ne pensi|aiutami|aiuto|problema|problemi|non riesco|non so|non ce la|organizz\w*|riorganizz\w*|spiega\w*|ragiona\w*|valuta\w*|meglio|dovrei|potrei|riesco|sovrappo\w*|conflitt\w*|incastr\w*|strategi\w*|analizz\w*|priorita|idea|idee)\b/;
+function domandaVera(testo){
+  const t = senzaAccenti(String(testo || "").toLowerCase());
+  return t.includes("?") || t.length > 280 || PAROLE_DOMANDA.test(t);
+}
+function tierPer(lavoro, testo){
+  const t = claudeConf().tier;
+  if (t === "quick") return "quick";
+  if (t === "max") return lavoro === "foto" ? "default" : tierMigliore();
+  if (lavoro === "conversa") return domandaVera(testo) ? tierMigliore() : "quick";
+  if (lavoro === "punto" || lavoro === "abbinamenti") return "default";
+  return "quick";
+}
 // un JSON da Claude, con una seconda prova se la prima risposta non si legge
 async function claudeJSON(input, o){
   try { return await claudeChiedi(input, { ...(o || {}), json: true }); }
-  catch(e){ if (e.code !== "invalid_json") throw e; return await claudeChiedi(input + "\n\nRispondi SOLO con il JSON richiesto, senza altro testo.", { ...(o || {}), json: true, cache: false }); }
+  catch(e){
+    if (e.code !== "invalid_json") throw e;
+    const nota = "\n\nRispondi SOLO con il JSON richiesto, senza altro testo.";
+    const di = Array.isArray(input) ? input.map((m, i) => i === input.length - 1 ? { ...m, content: m.content + nota } : m) : input + nota;
+    return await claudeChiedi(di, { ...(o || {}), json: true, cache: false });
+  }
 }
 
 /* ---------- GOOGLE CALENDAR, CON IL COLLEGAMENTO DI CLAUDE ----------
@@ -15368,7 +16003,9 @@ async function gScrivi(evs){
     if (ev.allDay){ inp.allDay = true; inp.startTime = `${ev.d}T00:00:00`; inp.endTime = `${addDays(ev.fineD || ev.d, 1)}T00:00:00`; }
     else { inp.startTime = gOra(ev.d, ev.s); inp.endTime = gOra(ev.d, ev.e > ev.s ? ev.e : ev.s + 60); gAvvisi(inp); }
     if (ev.luogo) inp.location = ev.luogo;
-    if (ev.nota) inp.description = ev.nota;
+    const dire = ev.allDay ? [] : promemoriaPer(ev.titolo, ev.persone, ev.personeId);
+    const desc = notaConPromemoria(ev.nota, dire);
+    if (desc) inp.description = desc;
     if (ev.libero) inp.availability = "AVAILABILITY_FREE";
     const cal = calIdPer(ev.piano);
     if (cal && cal !== GAPI.account) inp.calendarId = cal;
@@ -15449,7 +16086,7 @@ window.addEventListener("error", e => {
   bar.textContent = "Errore: " + (e.message || e) + " — mandalo a Claude.";
 });
 
-document.querySelectorAll(".navbtn").forEach(b => b.onclick = () => { PROGSUB = null; OPTSUB = null; TAB = b.dataset.tab; render(); });
+document.querySelectorAll(".navbtn").forEach(b => b.onclick = () => { PROGSUB = null; PROG_DA = null; OPTSUB = null; TAB = b.dataset.tab; render(); });
 document.getElementById("fab").onclick = () => openQuick();
 
 // l'ora in testata si aggiorna da sola, senza ridisegnare niente
@@ -15484,6 +16121,7 @@ if (!IN_CLAUDE && "serviceWorker" in navigator && location.protocol.indexOf("htt
     STATO_NUOVO = false;
     runEngine(); render();
     await capTutte();
+    claudeLimiti();
     // un solo permesso per tutto (Claude e Google Calendar), la prima volta
     try {
       const pm = CAP.permissions;
