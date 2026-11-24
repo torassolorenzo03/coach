@@ -604,7 +604,7 @@ function applyTheme(){
 let S = null;
 let TAB = "oggi";
 const LS_KEY = "coach.state.v1";
-const VERSIONE_APP = 35;
+const VERSIONE_APP = 36;
 
 async function loadState(){
   let local = null;
@@ -13662,7 +13662,7 @@ function renderSegretaria(){
   bindAll();
   bindCasa();
   // il punto: lo scrive Claude una volta per parte del giorno (mattina, pomeriggio, sera)
-  if (!pausa && claudePronto() && !puntoDi(T) && !puntoErroreDi(T) && !PUNTO_IN_CORSO) setTimeout(() => { if (TAB === "oggi" && !puntoDi(today())) puntoScrivi(false); }, 300);
+  if (!pausa && claudePronto() && !puntoDi(T) && !puntoErroreDi(T) && !PUNTO_IN_CORSO && !PERMESSO_IN_CORSO) setTimeout(() => { if (TAB === "oggi" && !puntoDi(today())) puntoScrivi(false); }, 300);
 }
 
 // Tempo utile: solo lettura, dalla disponibilità di questo momento a una singola proposta.
@@ -14267,7 +14267,7 @@ async function puntoScrivi(forza){
     if (!breve) throw new Error("Claude ha restituito un riepilogo vuoto.");
     PUNTO_ERRORE = null;
     S.punto = S.punto || {};
-    S.punto[T] = { testo: breve, fascia, at: Date.now(), fonte: "claude" };
+    S.punto[T] = { testo: breve, fascia, at: Date.now(), fonte: "claude", cal: !gNotaOrari() };
     for (const k of Object.keys(S.punto)) if (k < addDays(T, -7)) delete S.punto[k];
     save();
   } catch(e){
@@ -16787,12 +16787,26 @@ function gErrore(e){
     case "not_in_manifest": case "approval_required": case "consent_required": return "Coach non ha ancora il permesso di usare il tuo Google Calendar.";
     case "blocked_by_policy": return "Il tuo account non permette a Coach di usare Google Calendar.";
     case "server_unavailable": case "rate_limited": return "Google Calendar non risponde adesso: riprovo più tardi.";
+    case "cancelled": return "Google Calendar non ha risposto entro 45 secondi. Tocca Riprova fra poco; se succede ancora, controlla il collegamento su claude.ai, in Impostazioni → Connettori.";
     case "tool_error": return "Google Calendar ha detto di no: " + String((e && e.message) || "").slice(0, 160);
     case "not_granted": case "capability_disabled": case "capability_removed": return "Qui Coach non può usare Google Calendar.";
     default: return "Google Calendar non risponde: " + String((e && e.message) || e || "").slice(0, 160);
   }
 }
 const gPermesso = c => ["not_in_manifest", "approval_required", "consent_required"].includes(c);
+// una lettura che non risponde si ferma da sola dopo 45 secondi (solo le letture: le scritture non si interrompono)
+const G_ATTESA_MS = 45000;
+const gTempo = () => { try { return typeof AbortSignal !== "undefined" && AbortSignal.timeout ? AbortSignal.timeout(G_ATTESA_MS) : undefined; } catch(e){ return undefined; } };
+// il permesso di Google Calendar per questa pagina; se non si può sapere, provo comunque
+let PERMESSO_IN_CORSO = false;
+async function gPermessoStato(){
+  try {
+    const pm = CAP.permissions;
+    if (!pm || typeof pm.state !== "function") return "granted";
+    const s = await pm.state("mcp:" + GSERVER);
+    return typeof s === "string" ? s : "granted";
+  } catch(e){ return "granted"; }
+}
 const gTesto = h => String(h || "").replace(/<br\s*\/?>/gi, "\n").replace(/<\/p>/gi, "\n").replace(/<[^>]+>/g, "")
   .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim();
 // i calendari che non si scrivono: festività, compleanni dei contatti e simili
@@ -16853,7 +16867,7 @@ async function gPagineEventi(cal, richiesta, limite){
     if (!cal.primario) inp.calendarId = cal.id;
     if (token) inp.pageToken = token;
     try {
-      const r = await CAP.mcp.callTool(GSERVER, "list_events", inp, { cache: false });
+      const r = await CAP.mcp.callTool(GSERVER, "list_events", inp, { cache: false, signal: gTempo() });
       const p = r.payload || {}, pagina = p.events || p.items;
       if (!Array.isArray(pagina)) throw new Error("La risposta del calendario è incompleta.");
       eventi.push(...pagina);
@@ -16874,13 +16888,25 @@ async function gLeggi(forza){
   if (!forza && GAPI.at && !GAPI.errore && Date.now() - GAPI.at < 60000) return true;
   GAPI.inCorso = Promise.resolve().then(async () => {
     try {
+      // senza il permesso la chiamata resterebbe ferma ad aspettare una risposta che magari non vedi: lo dico e mi fermo
+      const perm = await gPermessoStato();
+      if (perm === "prompt" || perm === "denied"){
+        GAPI.codice = "approval_required";
+        GAPI.errore = perm === "denied"
+          ? "Hai detto di no a Google Calendar per Coach. Tocca Dai il permesso e accendi Google Calendar nel pannello dei permessi."
+          : PERMESSO_IN_CORSO
+            ? "Claude ti sta chiedendo il permesso per Google Calendar: tocca Consenti. Se la finestra non si vede, tocca Dai il permesso."
+            : "Coach non ha ancora il permesso di leggere il tuo Google Calendar. Tocca Dai il permesso, poi Consenti.";
+        if (!GCAL.list.length){ GCAL.status = "err"; GCAL.err = GAPI.errore; }
+        return false;
+      }
       if (!GAPI.calendari || !GAPI.calAt || Date.now() - GAPI.calAt > 6 * 3600000){
         const calendari = [], tokenVisti = new Set();
         let pagina = null;
         do {
           const inp = { pageSize: 100 };
           if (pagina) inp.pageToken = pagina;
-          const r = await CAP.mcp.callTool(GSERVER, "list_calendars", inp, { cache: false });
+          const r = await CAP.mcp.callTool(GSERVER, "list_calendars", inp, { cache: false, signal: gTempo() });
           const p = r.payload || {}, elenco = p.calendars || p.items;
           if (!Array.isArray(elenco)) throw new Error("Non riesco a leggere l’elenco dei calendari.");
           calendari.push(...elenco);
@@ -16939,6 +16965,12 @@ async function gcalAggiorna(forza){
   const avvisoPrima = gNotaOrari();
   const ok = await gLeggi(forza);
   const dopo = JSON.stringify(GCAL.list.map(g => [g.key, g.date, g.s, g.e, g.label]));
+  // il punto di oggi scritto prima che il calendario fosse letto (o senza saperlo) si riscrive una volta, con gli impegni veri
+  try {
+    const p = S.punto && S.punto[today()];
+    if (ok && p && p.fonte === "claude" && p.cal !== true && p.at < GAPI.at && !gNotaOrari()
+        && claudePronto() && !PUNTO_IN_CORSO && !puntoErroreDi(today()) && !isPaused()) setTimeout(() => puntoScrivi(true), 0);
+  } catch(e){}
   if (prima !== dopo || avvisoPrima !== gNotaOrari() || !ok || forza){
     try { runEngine(); } catch(e){}
     if (!document.querySelector(".sheet")) render();
@@ -16954,7 +16986,9 @@ async function gChiediPermesso(){
       if (st && st["mcp:" + GSERVER] === "denied"){ try { await p.manage(); } catch(e){ alert("Apri il menu della pagina, alla voce Permessi, e accendi Google Calendar."); } }
     }
   } catch(e){}
+  PERMESSO_IN_CORSO = false;   // hai risposto qui: la prima finestra, se era rimasta aperta, non conta più
   await gcalAggiorna(true);
+  if (!document.querySelector(".sheet")) render();
 }
 
 // i calendari dove si può scrivere
@@ -17100,16 +17134,28 @@ if (!IN_CLAUDE && "serviceWorker" in navigator && location.protocol.indexOf("htt
     runEngine(); render();
     await capTutte();
     claudeLimiti();
-    // un solo permesso per tutto (Claude e Google Calendar), la prima volta
+    // un solo permesso per tutto (Claude e Google Calendar), la prima volta. La finestra resta aperta finché non rispondi:
+    // intanto la pagina non si ferma, e dice che aspetta il permesso invece di «lo sto leggendo»
+    let richiesta = null;
     try {
       const pm = CAP.permissions;
-      if (pm){ const st = await pm.state(); if (Object.values(st || {}).some(v => v === "prompt")) await pm.request(); }
+      if (pm){
+        const st = await pm.state();
+        if (Object.values(st || {}).some(v => v === "prompt")){
+          PERMESSO_IN_CORSO = true;
+          richiesta = Promise.resolve().then(() => pm.request()).catch(() => null).finally(() => { PERMESSO_IN_CORSO = false; });
+        }
+      }
     } catch(e){}
     if (S.gcalOn && CAP.mcp) await gcalAggiorna(true);
     runEngine();
     if (!document.querySelector(".sheet")) render();
     setInterval(() => { if (!document.hidden && S.gcalOn && CAP.mcp && Date.now() - (GAPI.at || 0) > 9 * 60 * 1000) gcalAggiorna(); }, 60 * 1000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden && S.gcalOn && CAP.mcp && Date.now() - (GAPI.at || 0) > 3 * 60 * 1000) gcalAggiorna(); });
+    if (richiesta) richiesta.then(() => {
+      if (S.gcalOn && CAP.mcp && (GAPI.codice === "approval_required" || !GAPI.at)) gcalAggiorna(true);
+      else if (!document.querySelector(".sheet")) render();
+    });
     return;
   }
   gcalRead();
