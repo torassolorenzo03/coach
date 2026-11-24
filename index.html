@@ -604,7 +604,7 @@ function applyTheme(){
 let S = null;
 let TAB = "oggi";
 const LS_KEY = "coach.state.v1";
-const VERSIONE_APP = 34;
+const VERSIONE_APP = 35;
 
 async function loadState(){
   let local = null;
@@ -819,18 +819,18 @@ function busyLabeled(dateStr){
     if (dateStr < o.date || dateStr > fine) continue;
     const a = dateStr === o.date ? toMin(o.start) : 0;   // nei giorni di mezzo occupa tutto
     const b = dateStr === fine ? toMin(o.end) : 1439;
-    if (b > a) out.push({ s:a, e:b, label:o.label, src:"singolo" });
+    if (b > a) out.push({ s:a, e:b, label:o.label, src:"singolo", ref:"ev:" + o.id });
   }
   if (S.gcalOn) for (const g of (GCAL.byDay[dateStr] || [])){
     if (!gcBusy(g)) continue;
-    out.push({ s: g.s, e: g.e, label: g.label, src: "gcal", rec: !!g.recurring });
+    out.push({ s: g.s, e: g.e, label: g.label, src: "gcal", ref: "gc:" + g.key, rec: !!g.recurring });
   }
   // le cose appena messe su Google Calendar, finché il calendario non le rilegge
   for (const x of (S.dafissare || [])){
     const f = x.fissato;
     if (x.stato !== "fissato" || !f || f.d !== dateStr || typeof f.s !== "number") continue;
     if (fxEventoGcal(x)) continue;
-    out.push({ s: f.s, e: f.e || Math.min(1439, f.s + (+x.durata || 60)), label: x.titolo, src: "fx" });
+    out.push({ s: f.s, e: f.e || Math.min(1439, f.s + (+x.durata || 60)), label: x.titolo, src: "fx", ref: "fx:" + x.id });
   }
   // la strada per andare e per tornare: occupa il tempo anche lei
   if (segr().viaggioOccupa){
@@ -1354,6 +1354,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":
 // dove sei, la pagina non deve saltare sotto le dita.
 let LAST_TAB = null;
 function render(){
+  const ripristinaBozza = conservaBozzaChat();
   // un campo ancora attivo (un orario appena scelto) si lascia prima di ridisegnare: se sparisse
   // mentre è attivo, il browser manderebbe un altro "change" a metà del ridisegno, e si rompe tutto
   const att = document.activeElement;
@@ -1373,6 +1374,7 @@ function render(){
   if (TAB === "io") renderIo();
   if (TAB === "opzioni") renderOpzioni();
   LAST_TAB = TAB;
+  ripristinaBozza();
   window.scrollTo(0, y);
 }
 
@@ -6613,7 +6615,7 @@ const AVV_NOMI = {
 function opzVoci(){
   const sm = `sveglia ${S.wake} · ${String(S.sleepH).replace(".", ",")} ore di sonno · chiusura ${S.closeAt}`;
   const notif = IN_CLAUDE ? "le manda Google Calendar sul telefono" : inApp() ? (S.push.on ? (S.push.mattino !== false ? `accese · giornata in breve alle ${S.push.ora}` : "accese") : "spente") : "arrivano solo nell'app Android";
-  const gc = !S.gcalOn ? "spento" : IN_CLAUDE ? (!CAP.mcp ? "non disponibile qui" : GAPI.errore ? "da sistemare" : GCAL.status === "ok" ? `collegato tramite Claude · ${Object.keys(GCAL.series).length} cose lette` : "in lettura…")
+  const gc = !S.gcalOn ? "spento" : IN_CLAUDE ? (!CAP.mcp ? "non disponibile qui" : GAPI.codice === "parziale" ? "lettura parziale" : GAPI.errore ? "da sistemare" : GCAL.status === "ok" ? `collegato tramite Claude · ${Object.keys(GCAL.series).length} cose lette` : "in lettura…")
     : GCAL.status === "ok" ? `acceso · ${Object.keys(GCAL.series).length} cose lette` : GCAL.status === "permesso" ? "manca il permesso" : GCAL.status === "browser" ? "solo nell'app Android" : GCAL.status === "vecchia" ? "serve l'app nuova" : "acceso";
   const pausa = isPaused() ? `in pausa dal ${prettyDate(S.pause.from)}` : "attivo";
   const sync = IN_CLAUDE ? (CAP.db ? `nel tuo account Claude · ${DBSTATO}` : "solo su questo dispositivo") : syncPronto() ? `collegata a ${S.sync.repo}` : "spenta";
@@ -8545,7 +8547,7 @@ const FASCE_ORE = { mattina: [8 * 60 + 30, 12 * 60 + 30], pranzo: [12 * 60, 15 *
 function fxFinestre(d, extra, fascia){
   let a0 = Math.max(awakeFrom() + 60, 8 * 60), a1 = Math.min(awakeTo() - 60, 21 * 60);
   const fx = fascia && FASCE_ORE[fascia];
-  if (fx){ a0 = Math.max(fx[0], awakeFrom()); a1 = fx[1]; }
+  if (fx){ a0 = Math.max(fx[0], awakeFrom()); a1 = Math.min(fx[1], awakeTo()); }
   let a = a0;
   if (d === today()) a = Math.max(a, Math.ceil((nowMin() + 60) / 30) * 30);   // oggi: almeno fra un'ora
   if (a1 - a < 15) return [];
@@ -8571,7 +8573,7 @@ function fxProposte(x, quante, opts){
   if (x.quando) return [{ d: x.quando.d, s: x.quando.s, e: x.quando.e, fin: [x.quando.s, x.quando.e], L: dayLoad(x.quando.d), score: 0 }];
   let inizio = opts.da && opts.da > T ? opts.da : T;
   if (x.dal && x.dal > inizio) inizio = x.dal;
-  let fine = x.entro && x.entro >= inizio ? x.entro : addDays(inizio, 20);
+  let fine = x.entro || addDays(inizio, 20);
   if (opts.fino && opts.fino < fine) fine = opts.fino;
   const conRegole = (S.regole || []).length > 0;
   const regoleGiorno = (S.regole || []).some(r => r.tipo === "maxIncontri" || r.tipo === "pausa");
@@ -8584,7 +8586,12 @@ function fxProposte(x, quante, opts){
     const incontri = regoleGiorno && x.incontro ? impegniTra(d, d).filter(eIncontro) : [];
     let migliore = null;
     for (const [a, b] of fxFinestre(d, opts.occupati && opts.occupati[d], x.fascia)){
-      for (let s = Math.ceil((a + vi) / 30) * 30; s + dur + vi <= b; s += 30){
+      // Un suggerimento con un minuto preciso passa gli stessi controlli della ricerca normale.
+      const primo = opts.oraEsatta ?? Math.ceil((a + vi) / 30) * 30;
+      const ultimo = Math.min(b - dur - vi, opts.oraEsatta ?? Infinity);
+      if (primo < a + vi) continue;
+      for (let s = primo; s <= ultimo; s += 30){
+        if (opts.escludiInizi && opts.escludiInizi.includes(s)) continue;
         if (conRegole && regoleRotte(d, s, s + dur, { incontro: !!x.incontro, incontri }).length) continue;
         let punti = 0;
         if (x.oraPref !== undefined && x.oraPref !== null) punti += Math.abs(s - x.oraPref) / 30 * 12;   // l'ora che avevi detto
@@ -8677,8 +8684,9 @@ async function calScrivi(evs){
     for (const e of lista){
       try {
         const r = JSON.parse(NAT.inserisciEvento(JSON.stringify(e)) || "{}");
-        out.push(r.ok ? { ok: true, key: null, idLocale: String(r.id) } : { ok: false, errore: r.errore || "il telefono non l'ha salvato" });
-      } catch(err){ out.push({ ok: false, errore: String(err && err.message || err) }); }
+        if (r.ok && r.id != null && String(r.id)) out.push({ ok: true, key: null, idLocale: String(r.id) });
+        else out.push({ ok: false, incerto: r.ok !== false, errore: r.errore || "Il telefono non ha confermato il salvataggio." });
+      } catch(err){ out.push({ ok: false, incerto: true, errore: String(err && err.message || err) }); }
     }
     if (out.some(r => r.ok) && S.gcalOn) setTimeout(() => { try { gcalRead(); runEngine(); if (!document.querySelector(".sheet")) render(); } catch(e){} }, 400);
     return out;
@@ -8729,24 +8737,205 @@ function fxManda(x, p){
   return true;
 }
 
-// Più cose insieme, con la scrittura diretta: un solo giro (e sull'iPhone un solo collegamento a Google).
-// Le segno subito fissate; se Google dice di no tornano fra le cose da programmare. Torna la promessa del risultato.
-function fxMandaMolti(coppie, dopo){
-  for (const { x, p } of coppie) fxFissato(x, p, { ok: true, key: null });
-  save();
-  return calScrivi(coppie.map(({ x, p }) => ({ titolo: x.titolo, d: p.d, s: p.s, e: p.e, luogo: x.luogo || "", nota: x.nota || "", piano: !!p.piano,
-    personeId: pianoDi("fx:" + x.id).persone || [] }))).then(ris => {
-    const no = [];
-    coppie.forEach(({ x }, i) => {
-      const r = ris[i];
-      if (r && r.ok){ x.fissato.key = r.key || null; x.fissato.idLocale = r.idLocale || null; if (r.key) fxCollega(x, r.key); }
-      else { x.stato = "aperto"; x.fissato = null; no.push(`«${x.titolo}»: ${(r && r.errore) || "errore"}`); }
+// Verifica tutti gli orari scelti prima di eseguire anche la prima azione del lotto.
+let CONTROLLO_ORARI = false;
+function impegniInVerifica(voci, indice){
+  const { p, ignora, origine } = voci[indice];
+  const altri = busyLabeled(p.d).filter(b => !(ignora && b.ref === ignora && (!origine || origine === p.d)));
+  for (const x of fxTutti()){
+    const q = x.proposta;
+    if (x.stato === "proposto" && q && q.diretto && q.d === p.d)
+      altri.push({ s: q.s, e: q.e, label: x.titolo, ref: "fx:" + x.id });
+  }
+  voci.forEach((v, j) => {
+    if (indice !== j && v.p.d === p.d) altri.push({ s: v.p.s, e: v.p.e, label: v.x.titolo, ref: "lotto:" + j });
+  });
+  return altri;
+}
+function esaminaOrari(voci, notaLettura){
+  const note = new Set(), conflitti = [];
+  if (notaLettura) note.add(notaLettura);
+  voci.forEach((v, i) => {
+    const { x, p } = v;
+    const nota = S.gcalOn && (gApi() || gcalSupported()) ? gNotaOrari(p.d) : "";
+    if (nota) note.add(nota);
+    const viaggio = x.luogo && !luogoRemoto(x.luogo) ? (viaggioDi(x.luogo) || 0) : 0;
+    const motivo = [];
+    if (v.azione?.tipo === "sposta"){
+      const a = v.azione;
+      const real = a.o ? S.oneoffs.find(o => o.id === a.o.id) : GCAL.list.find(g => g.id === a.g?.id && (!a.g.cal || g.cal === a.g.cal));
+      if (real && Number.isFinite(a.daS)){
+        const s = a.o ? toMin(real.start) : real.s, e = a.o ? toMin(real.end) : real.e;
+        if (real.date !== a.daD || s !== a.daS || e !== a.daE) motivo.push("L’appuntamento originale è cambiato: " + dayChip(real.date) + " alle " + toHHMM(s) + ".");
+      }
+    }
+    if (p.d < today() || (p.d === today() && p.s < nowMin())) motivo.push("L’orario è già passato.");
+    if ((x.dal && p.d < x.dal) || (x.entro && p.d > x.entro)) motivo.push("Fuori dalle date previste.");
+    for (const b of impegniInVerifica(voci, i)){
+      if (b.s < p.e + viaggio && p.s - viaggio < b.e)
+        motivo.push(b.label + " (" + toHHMM(b.s) + "–" + toHHMM(b.e) + ")");
+    }
+    if (S.regole && S.regole.length){
+      for (const r of regoleRotte(p.d, p.s, p.e, { incontro: !!x.incontro, ignora: v.ignora }))
+        motivo.push(regolaAvviso(r, p.d));
+    }
+    if (motivo.length) conflitti.push({ i, motivo: [...new Set(motivo)] });
+  });
+  const avvisi = [...note];
+  return { conflitti, avvisi, firma: JSON.stringify([voci.map(v => [v.p.d, v.p.s, v.p.e]), conflitti, avvisi]) };
+}
+function alternativeVerifica(voci, i){
+  const { x, p } = voci[i], occupati = {};
+  occupati[p.d] = impegniInVerifica(voci, i).map(b => [b.s, b.e]);
+  const richiesta = { ...x, quando: null, durata: p.e - p.s, oraPref: p.s };
+  const escludiInizi = [p.s], trovati = [];
+  for (let n = 0; n < 2; n++){
+    const q = fxProposte(richiesta, 1, { da: p.d, fino: p.d, occupati, escludiInizi })[0];
+    if (!q) break;
+    trovati.push(q); escludiInizi.push(q.s);
+  }
+  return trovati;
+}
+function scegliDopoVerifica(voci, controllo, notaLettura){
+  return new Promise(risolvi => {
+    const w = foglio('<div data-verifica-orari></div>');
+    const box = w.querySelector("[data-verifica-orari]");
+    const osserva = typeof MutationObserver === "function" ? new MutationObserver(() => { if (!w.isConnected) fine(null); }) : null;
+    const fine = esito => { osserva?.disconnect(); w.remove(); risolvi(esito); };
+    if (osserva) osserva.observe(document.body, { childList: true });
+    const disegna = esame => {
+      const alternative = voci.map((v,i) => esame.conflitti.some(c => c.i === i) ? alternativeVerifica(voci,i) : []);
+      box.innerHTML = '<h3>Ricontrollo degli orari</h3>' +
+        esame.avvisi.map(t => '<p class="hint">' + esc(t) + '</p>').join("") +
+        voci.map((v,i) => {
+          const c = esame.conflitti.find(c => c.i === i);
+          return '<div class="card" style="padding:12px;margin:8px 0"><strong>' + esc(v.x.titolo) + '</strong><div>' +
+            esc(dayChip(v.p.d)) + ' · ' + toHHMM(v.p.s) + '–' + toHHMM(v.p.e) + '</div>' +
+            (c ? '<div class="hint">' + esc(c.motivo.join(" · ")) + '</div>' +
+              (alternative[i].length ? '<div class="chips">' + alternative[i].map((q,k) => '<button class="chip" data-orario-alt="' + i + '/' + k + '">Usa le ' + toHHMM(q.s) + '</button>').join("") + '</div>' :
+              '<div class="hint">Nessuna alternativa disponibile nello stesso giorno.</div>') : '') + '</div>';
+        }).join("") +
+        '<div class="btnrow"><button class="btn primary" data-orario-ok>' +
+        (esame.conflitti.length ? "Conferma anche con il conflitto" : esame.avvisi.length ? "Conferma con i dati disponibili" : "Conferma questi orari") +
+        '</button><button class="btn ghost" data-orario-no>Torna alla proposta</button></div>';
+      box.querySelectorAll("[data-orario-alt]").forEach(b => b.onclick = () => {
+        const [i,k] = b.dataset.orarioAlt.split("/").map(Number), q = alternative[i][k];
+        voci[i].p = { ...voci[i].p, d: q.d, s: q.s, e: q.e };
+        disegna(esaminaOrari(voci, notaLettura));
+      });
+      box.querySelector("[data-orario-no]").onclick = () => fine(null);
+      box.querySelector("[data-orario-ok]").onclick = () => fine(esame.firma);
+    };
+    disegna(controllo);
+  });
+}
+async function verificaPrimaDiConfermare(richieste){
+  if (!richieste.length) return [];
+  if (CONTROLLO_ORARI){ toast("C’è già una verifica degli orari in corso."); return null; }
+  CONTROLLO_ORARI = true;
+  const voci = richieste.map(v => ({ ...v, p: { ...v.p } }));
+  try {
+    let autorizzata = null;
+    for (;;){
+      let nota = "";
+      if (S.gcalOn && gApi()){
+        if (!await gLeggi(true)) nota = gNotaOrari() || "La lettura aggiornata non è completa. Controlla gli orari.";
+      } else if (S.gcalOn && gcalSupported()) gcalRead();
+      const esame = esaminaOrari(voci, nota);
+      if ((!esame.conflitti.length && !esame.avvisi.length) || esame.firma === autorizzata) return voci;
+      autorizzata = await scegliDopoVerifica(voci, esame, nota);
+      if (!autorizzata) return null;
+    }
+  } catch(e){ toast("Non riesco a verificare questi orari. Riprova."); return null; }
+  finally { CONTROLLO_ORARI = false; }
+}
+function orariPianoPerVerifica(d, piano){
+  return piano.blocchi.filter(b => b.scelto && !b.gia).map(b => ({
+    x: fxTutti().find(x => x.id === b.fx), p: { d, s: b.s, e: b.e }, blocco: b
+  })).filter(v => v.x && v.x.stato === "aperto");
+}
+async function verificaRichiestaChat(azioni){
+  const richieste = [], copiaAzioni = structuredClone(azioni), piani = new Map();
+  for (const a of copiaAzioni.filter(a => a.on)){
+    if (a.tipo === "conferma_piano"){
+      const p = pianoDelGiorno(today());
+      if (!p || p.stato === "confermato"){ toast("Il piano è cambiato. Riapri la giornata."); return null; }
+      const bozza = structuredClone(p);
+      richieste.push(...orariPianoPerVerifica(today(), bozza)); piani.set(a, bozza);
+      continue;
+    }
+    const r = a.tipo === "frase" ? a.r : null;
+    let orario = orarioAzione(a);
+    if (!orario && r && r.tipo === "evento" && Number.isFinite(r.ora))
+      orario = { d: r.data || today(), s: r.ora, e: r.fine ?? Math.min(1439, r.ora + 60) };
+    if (!orario) continue;
+    const rr = r || a;
+    richieste.push({ x: { ...rr, titolo: rr.titolo || a.titolo, incontro: !!rr.incontro || rr.cat === "incontro" }, p: { d: orario.d, s: orario.s, e: orario.e }, azione: a,
+      ignora: a.tipo === "sposta" ? a.g ? "gc:" + a.g.key : a.o ? "ev:" + a.o.id : null : null, origine: a.daD });
+  }
+  const scelte = await verificaPrimaDiConfermare(richieste);
+  if (!scelte) return null;
+  for (const { azione: a, blocco, p } of scelte){
+    if (blocco){ blocco.s = p.s; blocco.e = p.e; }
+    else if (a.tipo === "da_programmare") a.proposta = p;
+    else if (a.tipo === "frase") Object.assign(a.r, { data: p.d, ora: p.s, fine: p.e });
+    else Object.assign(a, p);
+  }
+  return { azioni: copiaAzioni, piani };
+}
+
+async function fxMandaVerificato(x, p, dopo){
+  const statoPrima = x.stato;
+  const righe = await verificaPrimaDiConfermare([{ x, p }]);
+  if (!righe) return;
+  const vivo = fxTutti().find(v => v.id === x.id);
+  if (!vivo || vivo.stato !== statoPrima){ toast("La voce è cambiata. Riaprila prima di confermare."); return; }
+  if (fxManda(vivo, righe[0].p) && dopo) dopo();
+}
+
+// Un invio diretto rimane in attesa fino alla ricevuta. Un errore di rete può arrivare dopo il salvataggio.
+const FX_INVII_IN_CORSO = new Set();
+function ricevutaCalendario(titolo, r){
+  const nome = "«" + titolo + "»";
+  if (r && r.ok) return nome + (r.idLocale ? " salvato nel calendario del telefono." : " salvato su Google Calendar.");
+  if (!r || r.incerto) return nome + " da verificare nel calendario prima di ripetere l’invio.";
+  return nome + " non inviato. " + (r.errore || "Controlla il collegamento.");
+}
+async function fxMandaMolti(coppie, dopo){
+  const esiti = new Array(coppie.length), invii = [];
+  for (const [i, { x, p }] of coppie.entries()){
+    const vivo = fxTutti().find(v => v.id === x.id);
+    if (!vivo || vivo.stato !== "aperto" || FX_INVII_IN_CORSO.has(x.id)){
+      esiti[i] = vivo && vivo.stato === "fissato" && vivo.fissato && (vivo.fissato.key || vivo.fissato.idLocale)
+        ? { ok: true, key: vivo.fissato.key, idLocale: vivo.fissato.idLocale } : { ok: false, incerto: true };
+      continue;
+    }
+    vivo.stato = "proposto";
+    vivo.proposta = { d: p.d, s: p.s, e: p.e, at: Date.now(), diretto: true,
+      cal: gApi() ? calIdPer(p.piano) || GAPI.account || "" : "", prima: (GCAL.byDay[p.d] || []).map(ev => ev.key) };
+    FX_INVII_IN_CORSO.add(vivo.id);
+    invii.push({ i, id: vivo.id, partito: vivo.proposta.at, p, evento: { titolo: vivo.titolo, d: p.d, s: p.s, e: p.e, luogo: vivo.luogo || "", nota: vivo.nota || "",
+      piano: !!p.piano, personeId: pianoDi("fx:" + vivo.id).persone || [] } });
+  }
+  if (invii.length){
+    save();
+    let ris;
+    try { ris = await calScrivi(invii.map(v => v.evento)); }
+    catch(e){ ris = []; }
+    invii.forEach(({ i, id, partito, p }, j) => {
+      FX_INVII_IN_CORSO.delete(id);
+      const vivo = fxTutti().find(x => x.id === id);
+      const r = ris && ris[j] || { ok: false, incerto: true };
+      esiti[i] = r;
+      if (!vivo || vivo.stato !== "proposto" || !vivo.proposta || !vivo.proposta.diretto || vivo.proposta.at !== partito) return;
+      if (r.ok) fxFissato(vivo, p, r);
+      else if (!r.incerto){ vivo.stato = "aperto"; vivo.proposta = null; }
     });
     save();
-    if (no.length){ render(); alert(`Non sono andati su Google Calendar, li ho rimessi fra le cose da programmare:\n${no.join("\n")}`); }
-    if (dopo) dopo(ris);
-    return ris;
-  });
+  }
+  if (dopo) dopo(esiti);
+  else if (esiti.length) toast(esiti.map((r, i) => ricevutaCalendario(coppie[i].x.titolo, r)).join(" "));
+  return esiti;
 }
 
 // l'evento di Google di una cosa fissata da qui (per chiave, o per id del telefono finché Google non la sincronizza)
@@ -8788,7 +8977,16 @@ function fxAbbina(){
     const cand = GCAL.list.filter(g => !g.recurring && g.date >= dal && (fxNorm(g.label) === nome
       || (g.date === p.d && Math.abs(g.s - p.s) <= 15 && !(p.prima || []).includes(g.key))))
       .sort((a, b) => Math.abs(daysBetween(a.date, p.d)) - Math.abs(daysBetween(b.date, p.d)));
-    const g = cand.find(c => c.key.startsWith("g:"));
+    let g;
+    if (p.diretto){
+      if (FX_INVII_IN_CORSO.has(x.id)) continue;
+      const uguali = cand.filter(c => c.key.startsWith("g:") && c.date === p.d && c.s === p.s && c.e === p.e
+        && (!p.cal || c.cal === p.cal) && fxNorm(c.label) === nome && !(p.prima || []).includes(c.key)
+        && !fxTutti().some(v => v.fissato && v.fissato.key === c.key));
+      const altriInAttesa = fxInAttesa().some(v => v.id !== x.id && v.proposta && v.proposta.diretto && v.proposta.d === p.d
+        && v.proposta.s === p.s && v.proposta.e === p.e && v.proposta.cal === p.cal && fxNorm(v.titolo) === nome);
+      if (uguali.length === 1 && !altriInAttesa) g = uguali[0];
+    } else g = cand.find(c => c.key.startsWith("g:"));
     if (g){
       x.stato = "fissato";
       x.fissato = { key: g.key, d: g.date, s: g.s, at: Date.now() };
@@ -8802,7 +9000,7 @@ function fxAbbina(){
       fissati.push(`${x.titolo}, ${dayChip(g.date).toLowerCase()} alle ${toHHMM(g.s)}`);
       fxNotizia(`Fissato su Google Calendar: ${x.titolo}, ${dayChip(g.date).toLowerCase()} alle ${toHHMM(g.s)}.`);
       cambiato = true;
-    } else if (!cand.length && (p.d < T || Date.now() - p.at > 3 * 86400000)){
+    } else if (!p.diretto && !cand.length && (p.d < T || Date.now() - p.at > 3 * 86400000)){
       x.stato = "aperto"; x.proposta = null;
       fxNotizia(`«${x.titolo}» non lo trovo su Google Calendar: lo rimetto fra le cose da fissare.`);
       cambiato = true;
@@ -8839,6 +9037,12 @@ function fxRigaHTML(x){
 function fxAttesaHTML(x){
   const p = x.proposta || {};
   const leggo = S.gcalOn && GCAL.status === "ok";
+  if (p.diretto && FX_INVII_IN_CORSO.has(x.id)) return `<div class="row"><div class="rbody"><div class="rtitle">${esc(x.titolo)}</div>
+    <div class="rmeta">Invio al calendario in corso.</div></div></div>`;
+  if (p.diretto) return `<div class="row"><div class="rbody"><div class="rtitle">${esc(x.titolo)}</div>
+    <div class="rmeta">In attesa di riscontro per ${esc(fxQuando(p))}. Controlla il calendario prima di ripetere l’invio.</div>
+    <div class="why"><button data-fxsalvato="${x.id}">L’ho trovato nel calendario</button>
+    <button data-fxannulla="${x.id}">Ho verificato, manca</button></div></div></div>`;
   return `<div class="row" style="flex-direction:column;align-items:stretch;gap:8px">
     <div class="rbody"><div class="rtitle">${esc(x.titolo)}</div>
       <div class="rmeta">Mandato a Google Calendar per ${p.d ? esc(fxQuando(p)) : "un orario"}: ${leggo ? "appena lo salvi lo ritrovo qui." : "da qui non leggo il calendario, dimmi tu quando l'hai salvato."}</div></div>
@@ -8872,12 +9076,12 @@ function bindFx(root){
   root.querySelectorAll("[data-fx]").forEach(b => b.onclick = () => openFx(b.dataset.fx));
   root.querySelectorAll("[data-fxok]").forEach(b => b.onclick = () => {
     const x = trova(b.dataset.fxok); if (!x) return;
-    if (fxManda(x, { d: b.dataset.d, s: +b.dataset.s, e: +b.dataset.e })){ render(); toast("Controlla su Google Calendar e tocca Salva."); }
+    fxMandaVerificato(x, { d: b.dataset.d, s: +b.dataset.s, e: +b.dataset.e }, () => { render(); fattoGoogle(); });
   });
   root.querySelectorAll("[data-fxaltro]").forEach(b => b.onclick = () => openFxOrario(b.dataset.fxaltro));
   root.querySelectorAll("[data-fxdopo]").forEach(b => b.onclick = () => openFxDopo(b.dataset.fxdopo));
   root.querySelectorAll("[data-fxriapri]").forEach(b => b.onclick = () => {
-    const x = trova(b.dataset.fxriapri); if (x && x.proposta && fxManda(x, x.proposta)) render();
+    const x = trova(b.dataset.fxriapri); if (x && x.proposta) fxMandaVerificato(x, x.proposta, render);
   });
   root.querySelectorAll("[data-fxannulla]").forEach(b => b.onclick = () => {
     const x = trova(b.dataset.fxannulla); if (!x) return;
@@ -8920,13 +9124,14 @@ function openFxDopo(id){
 function openFxOrario(id){
   const x = fxTutti().find(y => y.id === id); if (!x) return;
   const T = today(), dur = +x.durata || 60;
-  const prop = fxProposte(x, 5);
+  const prop = fxProposte(x, 5), notaOrari = gNotaOrari();
   const w = document.createElement("div");
   w.className = "sheet";
   w.innerHTML = `<div class="sheetin">
     <h3>${esc(x.titolo)}</h3>
     <div class="rmeta" style="margin:-6px 0 14px">${esc(fxMeta(x))}</div>
-    <h2 style="margin-top:0">I posti migliori</h2>
+    <h2 style="margin-top:0">Orari proposti</h2>
+    ${notaOrari ? `<div class="hint">${esc(notaOrari)}</div>` : ""}
     <div class="card">
       ${prop.length ? prop.map(p => `<button class="actrow" data-d="${p.d}" data-s="${p.s}" data-e="${p.e}">
         <div class="rbody"><div class="rtitle">${esc(dayChip(p.d))} · ${toHHMM(p.s)}–${toHHMM(p.e)}</div>
@@ -8944,7 +9149,7 @@ function openFxOrario(id){
     <div class="btnrow"><button class="btn primary" id="fxo-ok" style="flex:2">Mettilo su Google Calendar</button><button class="btn ghost" id="fxo-x">Annulla</button></div>
     <div style="height:30px"></div></div>`;
   document.body.appendChild(w);
-  const manda = p => { if (fxManda(x, p)){ w.remove(); render(); toast("Controlla su Google Calendar e tocca Salva."); } };
+  const manda = p => fxMandaVerificato(x, p, () => { w.remove(); render(); fattoGoogle(); });
   w.querySelectorAll("[data-d]").forEach(b => b.onclick = () => manda({ d: b.dataset.d, s: +b.dataset.s, e: +b.dataset.e }));
   const cons = () => {
     const d = w.querySelector("#fxo-d").value, s = toMin(w.querySelector("#fxo-s").value || "10:00");
@@ -9796,13 +10001,21 @@ function openQuick(){
     </div>`;
     box.querySelectorAll("[data-forza]").forEach(b => b.onclick = () => { forzato = b.dataset.forza; capito(); });
     const qg = box.querySelector("#q-google");
-    if (qg) qg.onclick = () => {
-      const x = fxDaEvento(r);
-      if (fxManda(x, x.quando)){ w.remove(); render(); toast("Controlla su Google Calendar e tocca Salva."); }
+    if (qg) qg.onclick = async () => {
+      qg.disabled = true;
+      const scelta = await verificaRichiestaChat([{ tipo: "frase", on: true, r }]);
+      qg.disabled = false;
+      if (!scelta || !qg.isConnected) return;
+      const x = fxDaEvento(scelta.azioni[0].r);
+      if (fxManda(x, x.quando)){ w.remove(); render(); fattoGoogle(); }
     };
-    box.querySelector("#q-salva").onclick = () => {
+    box.querySelector("#q-salva").onclick = async e => {
       if (r.tipo === "scadenza" && !r.data){ w.remove(); apriFraseNelModulo(r); return; }
-      salvaFrase(r); w.remove(); render();
+      const pulsante = e.currentTarget; pulsante.disabled = true;
+      const scelta = await verificaRichiestaChat([{ tipo: "frase", on: true, r }]);
+      pulsante.disabled = false;
+      if (!scelta || !pulsante.isConnected) return;
+      salvaFrase(scelta.azioni[0].r); w.remove(); render();
       toast(r.tipo === "fissare" ? (r.incontro ? "Fra gli incontri da pianificare: te lo chiedo io." : "Fra le cose da fissare: te lo propongo io quando c'è un buco.")
         : r.tipo === "attesa" ? "Fra le cose che aspetti: te lo chiedo io." : `Salvato in ${TIPI_FRASE[r.tipo].nome}.`);
     };
@@ -10339,7 +10552,7 @@ function rimandaDomanda(id, giorni, prossima){
 // il peso decide l'ordine: prima quello che è più vicino
 const pesoDi = (g, extra) => (g === null || g === undefined ? 60 : Math.max(-10, g) * 6) + (extra || 0);
 const minutiCorti = m => m < 60 ? `${m} min` : m === 60 ? "1 ora" : m === 90 ? "1 ora e mezza" : m % 60 ? minutiLabel(m) : `${m / 60} ore`;
-const fattoGoogle = () => toast(calDiretto() ? "Messo su Google Calendar." : "Controlla su Google Calendar e tocca Salva.");
+const fattoGoogle = () => toast(calDiretto() ? "Invio al calendario in corso." : "Controlla su Google Calendar e tocca Salva.");
 
 let DOM_CACHE = null;
 function domande(T, quando){
@@ -10416,7 +10629,7 @@ function domandaQuando(x, g){
     sotto: p ? cap(fxPerche(p)) + "." : "",
     peso: pesoDi(g, x.imp === 1 ? -4 : 2),
     scelte: [
-      p && { t: "Sì, su Google", on: true, fa: () => { if (fxManda(x, p)) fattoGoogle(); } },
+      p && { t: "Sì, su Google", on: true, fa: () => { fxMandaVerificato(x, p, fattoGoogle); } },
       { t: "Altro orario", apre: true, fa: () => openFxOrario(x.id) },
       g === null ? { t: "Più avanti", apre: true, fa: () => openFxDopo(x.id) }
                  : { t: "Più tardi", fa: () => { x.rimandi = (x.rimandi || 0) + 1; rimandaDomanda("fx:" + x.id, g); } }
@@ -10434,7 +10647,7 @@ function domandaGiorno(x, g){
     peso: pesoDi(g, -2),
     scelte: [
       { t: "Sì, lo segno", on: true, apre: true, fa: () => openFxOrario(x.id) },
-      p && { t: cap(fxQuando(p)), fa: () => { if (fxManda(x, p)) fattoGoogle(); } },
+      p && { t: cap(fxQuando(p)), fa: () => { fxMandaVerificato(x, p, fattoGoogle); } },
       { t: "Aspetto che me lo dicano", fa: () => aspettaGiorno(x, con) },
       { t: "Non ancora", fa: () => { x.rimandi = (x.rimandi || 0) + 1; rimandaDomanda("fx:" + x.id, g); } }
     ].filter(Boolean) };
@@ -10455,7 +10668,7 @@ function domandaMetti(x, g){
     sotto: [x.luogo, x.nota].filter(Boolean).join(" · "),
     peso: pesoDi(g, -8),
     scelte: [
-      { t: "Sì, su Google", on: true, fa: () => { if (fxManda(x, q)) fattoGoogle(); } },
+      { t: "Sì, su Google", on: true, fa: () => { fxMandaVerificato(x, q, fattoGoogle); } },
       { t: "Solo in Coach", fa: () => fxInCoach(x) },
       { t: "Cambia orario", apre: true, fa: () => openFxOrario(x.id) }
     ] };
@@ -10485,7 +10698,7 @@ function domandaBasta(x, T){
     sotto: p ? `Il primo buco libero è ${fxQuando(p)}.` : "",
     peso: 20,
     scelte: [
-      p ? { t: (x.incontro ? "Fissiamolo " : "La faccio ") + fxQuando(p), on: true, fa: () => { x.rimandi = 0; if (fxManda(x, p)) fattoGoogle(); } }
+      p ? { t: (x.incontro ? "Fissiamolo " : "La faccio ") + fxQuando(p), on: true, fa: () => { fxMandaVerificato(x, p, () => { x.rimandi = 0; save(); fattoGoogle(); }); } }
         : { t: "Scelgo io quando", on: true, apre: true, fa: () => { x.rimandi = 0; openFxOrario(x.id); } },
       x.incontro ? { t: "Aspetto che me lo dicano", fa: () => { x.rimandi = 0; aspettaGiorno(x, con); } }
                  : { t: "La affido a qualcuno", apre: true, fa: () => openAffida({ titolo: x.titolo, fx: x.id, entro: x.entro }) },
@@ -10584,7 +10797,7 @@ function domandeGiaCheCiSei(T, add){
         sotto: slot ? `Ti propongo ${slot.dopo ? "subito dopo" : "subito prima"}, ${toHHMM(slot.s)}–${toHHMM(slot.e)}.` : "Prima e dopo non c'è un buco libero: scegli tu l'orario.",
         peso: pesoDi(g, 3),
         scelte: [
-          slot && { t: "Sì, su Google", on: true, fa: () => { if (fxManda(x, { d: ev.d, s: slot.s, e: slot.e })) fattoGoogle(); } },
+          slot && { t: "Sì, su Google", on: true, fa: () => { fxMandaVerificato(x, { d: ev.d, s: slot.s, e: slot.e }, fattoGoogle); } },
           { t: "Altro orario", apre: true, fa: () => openFxOrario(x.id) },
           { t: "No, un'altra volta", fa: () => rimandaDomanda(id, null, istanteMin(ev.d, 1440)) }
         ].filter(Boolean) });
@@ -11407,6 +11620,154 @@ function bindRegole(root){
 /* ---------- IL PIANO DI UN INCONTRO ----------
    Prima: dove, quanto ci metti e quando partire, con chi, cosa dirgli, di cosa
    parlare, cosa portare, e cosa puoi fare già che sei lì. Dopo: il verbale. */
+// Gli impegni già registrati restano la fonte per sapere cosa è ancora aperto.
+function sospesiIncontro(ev, invitati = personeDi(ev)){
+  const ids = new Set(invitati.map(p => p.id));
+  if (!ids.size) return [];
+  const fonti = new Map();
+  const annota = (ref, p) => {
+    const es = p.esito;
+    if (!es || es.nulla) return;
+    const info = es.incontro || {};
+    const passato = eventi.get(ref);
+    const giorno = info.giorno || (passato && passato.d);
+    if (giorno && ev.d && giorno > ev.d) return;
+    const presenti = new Set([...(info.presenti || []), ...(p.persone || [])]);
+    if (passato && !p.personeNo) for (const q of personeInTesto(passato.titolo)) presenti.add(q.id);
+    if (![...presenti].some(id => ids.has(id))) return;
+    for (const c of es.compiti || []) if (c.chi === "io" && !c.fatto && c.fx)
+      fonti.set(c.fx, { ref, compito: c.id, fonte: info.titolo || (passato && passato.titolo) || "Verbale precedente" });
+  };
+  const eventi = new Map();
+  const vecchi = Object.entries(S.piani || {}).filter(([,p]) => p && p.esito && !p.esito.nulla);
+  if (vecchi.some(([,p]) => !p.esito.incontro)){
+    for (const o of S.oneoffs || []) eventi.set("ev:" + o.id, { titolo: o.label, d: o.date });
+    if (S.gcalOn) for (const g of GCAL.list || []) eventi.set("gc:" + g.key, { titolo: g.label, d: g.date });
+    for (const x of fxTutti()) eventi.set("fx:" + x.id, { titolo: x.titolo, d: (x.fissato || x.quando || {}).d });
+  }
+  for (const [ref,p] of vecchi) annota(ref,p);
+  const out = [];
+  for (const x of fxTutti()){
+    const f = fonti.get(x.id);
+    if (f && !x.fatto && ["aperto","proposto","fissato"].includes(x.stato))
+      out.push({ tipo:"mio", id:x.id, testo:x.titolo, entro:x.entro || "", ...f });
+  }
+  for (const a of attesaAperte()){
+    const q = a.chi ? personaDi(a.chi) : a.chiNome && trovaPersona(a.chiNome);
+    if (q && ids.has(q.id)) out.push({ tipo:"attesa", id:a.id, testo:a.cosa, persona:q.id, nome:q.nome, entro:a.entro || "", fonte:"In attesa" });
+  }
+  return out.sort((a,b) => (a.entro || "9999").localeCompare(b.entro || "9999") || a.testo.localeCompare(b.testo));
+}
+
+function sospesiIncontroHTML(ev){
+  const aperti = sospesiIncontro(ev);
+  if (!aperti.length) return "";
+  return '<h2>Impegni ancora aperti</h2><div class="card">' + aperti.map(a =>
+    '<div class="row"><div class="rbody"><div class="rtitle">' + esc(a.testo) + '</div><div class="rmeta">' +
+    esc(a.tipo === "mio" ? "Promessa tua · " + a.fonte : "Aspetti da " + a.nome) +
+    (a.entro ? " · entro " + esc(prettyDate(a.entro)) : "") + '</div></div></div>').join("") + "</div>";
+}
+
+function dataResoconto(testo, base){
+  const t = senzaAccenti(testo).toLowerCase().trim();
+  const m = t.match(/\b(\d{4}-\d\d-\d\d|\d{1,2}\/\d{1,2}(?:\/\d{4})?|domani|dopodomani|oggi|lunedi|martedi|mercoledi|giovedi|venerdi|sabato|domenica)\s*$/);
+  if (!m) return null;
+  const s = m[1];
+  if (GIORNI_IT[s] !== undefined) return addDays(base, (GIORNI_IT[s] - dow(base) + 7) % 7 || 7);
+  if (["oggi","domani","dopodomani"].includes(s)) return addDays(base,["oggi","domani","dopodomani"].indexOf(s));
+  const parti = s.split("/");
+  let d = s;
+  if (parti.length >= 2){
+    const anno = +(parti[2] || base.slice(0,4));
+    d = anno + "-" + parti[1].padStart(2,"0") + "-" + parti[0].padStart(2,"0");
+    if (!parti[2] && d < base) d = String(anno + 1) + d.slice(4);
+  }
+  return dataOk(d) && iso(fromIso(d)) === d ? d : null;
+}
+
+// Una frase incerta resta una nota. L'anteprima rende esplicita la voce coinvolta.
+function preparaResoconto(ev, testo){
+  const presenti = personeDi(ev), aperti = sospesiIncontro(ev, presenti);
+  const segmenti = testo.split(/[\n;,]+|[.!](?=\s|$)/).map(s => s.trim()).filter(Boolean);
+  return segmenti.map(frase => {
+    const t = norm(frase), opzioni = [{ tipo:"nota", label:"Conserva nel verbale" }];
+    const aggiungi = (tipo, v, data) => opzioni.push({ tipo, id:v.id, testo:v.testo, persona:v.persona || null, prima:v.entro || null, data,
+      label:(tipo === "mio" ? "Segna come fatto: " : tipo === "arrivata" ? "Segna come ricevuto: " : "Aggiorna la scadenza: ") + v.testo +
+        (v.nome ? " · " + v.nome : "") + (data ? " · " + prettyDate(data) : "") });
+    const membri = personeInTesto(frase).filter(p => presenti.some(q => q.id === p.id));
+    const data = dataResoconto(frase, ev.d || today());
+    const personale = /\b(inviat[oaie]|mandat[oaie]|consegnat[oaie]|completat[oaie]|finit[oaie]|fatt[oaie]|spedit[oaie])\b/.test(t);
+    const risponde = /\b(rispond(?:e|era)|dara (?:una )?(?:risposta|conferma)|confermera)\b/.test(t);
+    const ricevuto = /\b(ha risposto|ha confermato|ricevut[oaie]|arrivat[oaie])\b/.test(t);
+    const incerto = /\b(non|forse|se|potrebbe|dovrebbe|spero|manca|devo|dovro|ancora da|ho quasi)\b/.test(t) || frase.includes("?");
+    let scelta = 0;
+    if (!incerto && membri.length === 1 && (ricevuto || (risponde && data))){
+      const p = membri[0], candidati = aperti.filter(a => a.tipo === "attesa" && a.persona === p.id);
+      const specifica = candidati.filter(a => norm(a.testo).split(" ").some(w =>
+        w.length >= 4 && !["dalla","dallo","della","dello","ricevere","risposta","riscontro","conferma"].includes(w) && t.split(" ").includes(w)));
+      const abbinate = specifica.length ? specifica : candidati.filter(a => /\b(risposta|riscontro|conferma)\b/.test(norm(a.testo)));
+      for (const a of candidati) aggiungi(ricevuto ? "arrivata" : "entro", a, ricevuto ? null : data);
+      if (abbinate.length === 1) scelta = opzioni.findIndex(o => o.id === abbinate[0].id);
+      if (!ricevuto && !abbinate.length){
+        opzioni.push({ tipo:"nuova", persona:p.id, data, testo:frase, label:"Crea attesa da " + p.nome + " · " + prettyDate(data) });
+        if (!candidati.length) scelta = opzioni.length-1;
+      }
+    } else if (!incerto && personale && (!membri.length || /^ho\b/.test(t))){
+      const candidati = aperti.filter(a => a.tipo === "mio");
+      const parole = t.split(" ").filter(w => w.length >= 4 && !/^(?:inviat|mandat|consegnat|completat|finit|fatt|spedit)/.test(w));
+      const abbinate = candidati.filter(a => parole.length && parole.every(w => norm(a.testo).split(" ").includes(w)));
+      for (const a of candidati) aggiungi("mio",a,null);
+      if (abbinate.length === 1) scelta = opzioni.findIndex(o => o.id === abbinate[0].id);
+    }
+    return { frase, opzioni, scelta };
+  });
+}
+function anteprimaResocontoHTML(righe){
+  return (righe || []).map((r,i) => {
+    const id = "vb-scelta-" + i;
+    return '<div class="field"><label for="' + id + '">' + esc(r.frase) + '</label><select id="' + id + '" data-vres="' + i + '">' +
+      r.opzioni.map((a,k) => '<option value="' + k + '"' + (k === r.scelta ? " selected" : "") + '>' + esc(a.label) + '</option>').join("") + '</select></div>';
+  }).join("");
+}
+function applicaResoconto(ev, es, testo, righe){
+  if (!testo.trim() || !righe.length) return;
+  const chiave = norm(testo);
+  es.resoconti = es.resoconti || [];
+  if (es.resoconti.some(r => r.chiave === chiave)) return;
+  const aperti = sospesiIncontro(ev);
+  for (const r of righe){
+    const a = r.opzioni[r.scelta] || r.opzioni[0];
+    if (a.tipo === "mio"){
+      const p = aperti.find(v => v.tipo === "mio" && v.id === a.id);
+      const x = p && fxTutti().find(v => v.id === a.id);
+      if (!x) continue;
+      x.fatto = today();
+      if (x.stato === "aperto") x.stato = "fatto";
+      const c = (pianoDi(p.ref).esito.compiti || []).find(v => v.id === p.compito);
+      if (c) c.fatto = today();
+    } else if (a.tipo === "nuova"){
+      if (!personeDi(ev).some(p => p.id === a.persona)) continue;
+      if (attesaAperte().some(x => x.chi === a.persona && norm(x.cosa) === norm(a.testo) && x.entro === a.data)) continue;
+      const c = { id:nuovoId("c"), t:a.testo, chi:"altro", persona:a.persona, entro:a.data };
+      es.compiti.push(c);
+    } else if (a.tipo === "arrivata" || a.tipo === "entro"){
+      if (!aperti.some(v => v.tipo === "attesa" && v.id === a.id && v.persona === a.persona)) continue;
+      const x = attesaAperte().find(v => v.id === a.id);
+      if (!x) continue;
+      if (a.tipo === "arrivata") attesaChiudi(x,"arrivata");
+      else {
+        x.entro = a.data; x.ricontrolla = a.data;
+        if (x.origine && x.origine.compito){
+          const orig = pianoDi(x.origine.ref).esito;
+          const c = orig && (orig.compiti || []).find(v => v.id === x.origine.compito);
+          if (c) c.entro = a.data;
+        }
+      }
+    }
+  }
+  es.resoconti.push({ chiave, testo:testo.trim(), giorno:ev.d || today() });
+}
+
 function mancaDi(ev){
   const p = pianoDi(ev.ref), l = luogoDi(ev), out = [];
   if (!eIncontro(ev)) return out;
@@ -11490,6 +11851,7 @@ function openPiano(ref){
         <div class="why" style="padding:0 12px 12px;margin:0">${inApp() ? `<button id="pi-rub">Dalla rubrica</button>` : ""}${pers.length ? "" : `<button id="pi-pno"${p.personeNo ? ` class="on"` : ""}>Nessuno in particolare</button>`}</div>
       </div>
       ${dire.length ? `<h2>Da dire</h2><div class="card">${dire.map(dadireRigaHTML).join("")}</div>` : ""}
+      ${sospesiIncontroHTML(ev)}
       <h2>Di cosa parlare</h2>
       <div class="card">${(p.punti || []).map(it => voceListaHTML("punti", it)).join("")}${campoRiga("pi-pt", "Un punto")}</div>
       <h2>Da portare</h2>
@@ -11542,7 +11904,7 @@ function openPiano(ref){
     w.querySelectorAll("[data-dd]").forEach(b => b.onclick = () => openDaDire(b.dataset.dd));
     w.querySelectorAll("[data-gcfx]").forEach(b => b.onclick = () => {
       const x = fxTutti().find(y => y.id === b.dataset.gcfx);
-      if (x && fxManda(x, { d: ev.d, s: +b.dataset.s, e: +b.dataset.e })){ fattoGoogle(); rifai(); }
+      if (x) fxMandaVerificato(x, { d: ev.d, s: +b.dataset.s, e: +b.dataset.e }, () => { fattoGoogle(); rifai(); });
     });
     w.querySelectorAll("[data-fxaltro]").forEach(b => b.onclick = () => openFxOrario(b.dataset.fxaltro));
     w.querySelectorAll("[data-gcp]").forEach(a => a.addEventListener("click", () => { const q = personaDi(a.dataset.gcp); if (q){ sentito(q, "scritto"); save(); } }));
@@ -11581,6 +11943,7 @@ function verbaleTesto(ref){
     righe.push("", "Compiti");
     es.compiti.forEach(c => righe.push(`- ${nomeCompito(c) || "Da assegnare"}: ${c.t}${c.entro ? `, entro ${GG[dow(c.entro)].toLowerCase()} ${prettyDate(c.entro)}` : ""}`));
   }
+  if ((es.resoconti || []).length) righe.push("", "Resoconto", ...es.resoconti.map(r => r.testo));
   if (es.note){ righe.push("", "Note", es.note); }
   return righe.join("\n");
 }
@@ -11607,6 +11970,8 @@ function openVerbale(ref){
   if (!ev){ alert("Non trovo più questo incontro."); return; }
   const p0 = pianoDi(ref);
   const es = { note: "", decisioni: [], compiti: [], ...(p0.esito && !p0.esito.nulla ? structuredClone(p0.esito) : {}) };
+  let baseEsito = JSON.stringify(p0.esito || null);
+  let racconto = "", anteprima = null;
   let punti = (p0.punti || []).map(x => ({ ...x }));
   let chi = "io", chiPersona = null;
   const w = document.createElement("div");
@@ -11619,6 +11984,11 @@ function openVerbale(ref){
       <h3 style="margin-top:4px">${esc(ev.titolo)}</h3>
       ${segr().nome ? "" : `<div class="field"><label for="vb-nome">Il tuo nome, per i verbali</label>${campoTesto("vb-nome", "", "Nome e cognome")}</div>`}
       <div class="rmeta" style="margin:-6px 0 4px">Presenti: ${esc(pres.join(", "))}</div>
+      ${(es.resoconti || []).length ? '<h2>Resoconti salvati</h2><div class="card">' + es.resoconti.map(r => '<div class="row"><div class="rbody">' + esc(r.testo) + '</div></div>').join("") + '</div>' : ""}
+      <h2><label for="vb-res">Com’è andata?</label></h2>
+      ${areaTesto("vb-res", racconto, "Documento inviato, Luca risponde venerdì", 2)}
+      <div class="btnrow"><button class="btn" id="vb-prepara">Rivedi gli aggiornamenti</button></div>
+      <div id="vb-anteprima">${anteprimaResocontoHTML(anteprima)}</div>
       ${punti.length ? `<h2>I punti: segna quelli trattati</h2><div class="card">${punti.map(it => `<div class="row${it.ok ? " done" : ""}"><button class="tick" data-vp="${it.id}" aria-label="Trattato: ${esc(it.t)}">${ICO_TICK}</button><div class="rbody"><div class="rtitle" style="font-size:15px">${esc(it.t)}</div></div></div>`).join("")}</div>` : ""}
       <h2>Decisioni</h2>
       <div class="card">${es.decisioni.map((d, i) => `<div class="row" style="align-items:center"><div class="rbody"><div class="rtitle" style="font-size:15px">${esc(d)}</div></div><button class="btn ghost" data-vdx="${i}" style="min-width:36px;padding:6px 0" aria-label="Togli">&times;</button></div>`).join("")}${campoRiga("vb-dec", "Una decisione presa")}</div>
@@ -11636,11 +12006,33 @@ function openVerbale(ref){
       ${dire.length ? `<h2>Da dire: gliel'hai detto?</h2><div class="card">${dire.map(dadireRigaHTML).join("")}</div>` : ""}
       <h2>Note</h2>
       ${areaTesto("vb-note", es.note, "Quello che c'è da ricordare", 4)}
-      <div class="btnrow"><button class="btn primary" id="vb-save" style="flex:2">Salva</button><button class="btn" id="vb-manda" style="flex:1">Manda</button></div>
+      <div class="btnrow"><button class="btn primary" id="vb-save" style="flex:2">${anteprima ? "Conferma e salva" : "Salva"}</button><button class="btn" id="vb-manda" style="flex:1">Manda</button></div>
       <div class="hint">Salvando, i compiti tuoi vanno fra le cose da fissare (te li propongo io), quelli degli altri fra le cose che aspetti.</div>
       <div class="btnrow"><button class="btn ghost wide" id="vb-x">Chiudi</button></div>
       <div style="height:30px"></div></div>`;
     const tieni = () => { const n = w.querySelector("#vb-note"); if (n) es.note = n.value.trim(); const nm = w.querySelector("#vb-nome"); if (nm && nm.value.trim()) segrMetti({ nome: pulisciNome(nm.value) }); };
+    const rr = w.querySelector("#vb-res");
+    rr.oninput = () => {
+      racconto = rr.value;
+      anteprima = null;
+      w.querySelector("#vb-anteprima").textContent = "";
+      w.querySelector("#vb-save").textContent = "Salva";
+    };
+    const prepara = () => {
+      racconto = rr.value.trim();
+      if (!racconto){ rr.focus(); return; }
+      if ((es.resoconti || []).some(r => r.chiave === norm(racconto))){ toast("Questo resoconto è già nel verbale."); return; }
+      anteprima = preparaResoconto(ev, racconto);
+      w.querySelector("#vb-anteprima").innerHTML = anteprimaResocontoHTML(anteprima);
+      legaAnteprima();
+      w.querySelector("#vb-save").textContent = "Conferma e salva";
+    };
+    const legaAnteprima = () => w.querySelectorAll("[data-vres]").forEach(campo => campo.onchange = () => {
+      const riga = anteprima && anteprima[+campo.dataset.vres];
+      if (riga) riga.scelta = +campo.value;
+    });
+    legaAnteprima();
+    w.querySelector("#vb-prepara").onclick = prepara;
     w.querySelectorAll("[data-vp]").forEach(b => b.onclick = () => { tieni(); punti = punti.map(x => x.id === b.dataset.vp ? { ...x, ok: !x.ok } : x); disegna(); });
     w.querySelectorAll("[data-vdx]").forEach(b => b.onclick = () => { tieni(); es.decisioni.splice(+b.dataset.vdx, 1); disegna(); });
     w.querySelectorAll("[data-vcx]").forEach(b => b.onclick = () => { tieni(); es.compiti.splice(+b.dataset.vcx, 1); disegna(); });
@@ -11660,16 +12052,34 @@ function openVerbale(ref){
     };
     w.querySelectorAll("[data-ddok]").forEach(b => b.onclick = () => { tieni(); const x = (S.dadire || []).find(y => y.id === b.dataset.ddok); if (x){ x.fatto = today(); save(); disegna(); } });
     const salva = () => {
+      if (JSON.stringify(pianoDi(ref).esito || null) !== baseEsito){
+        toast("Il verbale è cambiato. Riaprilo per ritrovare l’ultima versione."); return false;
+      }
+      const gia = (es.resoconti || []).some(r => r.chiave === norm(racconto));
+      if (racconto.trim() && !gia){
+        if (!anteprima){ prepara(); return false; }
+        const adesso = preparaResoconto(ev, racconto);
+        if (anteprima.some((r,i) => {
+          const a = r.opzioni[r.scelta];
+          return a.tipo !== "nota" && !(adesso[i] && adesso[i].opzioni.some(b => JSON.stringify(b) === JSON.stringify(a)));
+        })){
+          prepara(); toast("Una delle voci è cambiata. Rivedi gli aggiornamenti."); return false;
+        }
+      }
       tieni();
+      es.incontro = { giorno:ev.d, titolo:ev.titolo, presenti:personeDi(ev).map(p => p.id) };
       es.at = Date.now(); delete es.nulla;
       pianoMetti(ref, { esito: es, punti });
+      if (racconto.trim() && !gia) applicaResoconto(ev, es, racconto, anteprima);
       compitiInGiro(ref, es, ev.titolo);
-      pianoMetti(ref, { esito: es });
+      pianoMetti(ref, { esito: structuredClone(es) });
       for (const q of personeDi(ev)) if (q.ultimo !== ev.d && ev.d <= today()){ q.ultimo = q.ultimo && q.ultimo > ev.d ? q.ultimo : ev.d; q.log = (q.log || []).concat([{ d: ev.d, t: "incontro: " + ev.titolo }]).slice(-60); }
       save();
+      baseEsito = JSON.stringify(pianoDi(ref).esito || null);
+      return true;
     };
-    w.querySelector("#vb-save").onclick = () => { salva(); w.remove(); render(); toast("Verbale salvato."); };
-    w.querySelector("#vb-manda").onclick = () => { salva(); condividiTesto(verbaleTesto(ref), `Verbale: ${ev.titolo}`); };
+    w.querySelector("#vb-save").onclick = () => { if (salva()){ w.remove(); render(); toast("Verbale salvato."); } };
+    w.querySelector("#vb-manda").onclick = () => { if (salva()) condividiTesto(verbaleTesto(ref), `Verbale: ${ev.titolo}`); };
     w.querySelector("#vb-x").onclick = () => { w.remove(); render(); };
   };
   document.body.appendChild(w);
@@ -11751,8 +12161,8 @@ function openSettimana(prossima){
   const T = today();
   // dal venerdì la settimana in corso è quasi finita: si pianifica la prossima
   if (prossima === undefined) prossima = dow(T) === 5 || dow(T) === 6;
-  let sett, prop, scelte, coda = null, i = 0;
-  const calcola = () => { sett = settimanaDi(T, prossima); prop = propostaSettimana(sett); scelte = new Set(prop.filter(x => x.p).map(x => x.x.id)); coda = null; i = 0; };
+  let sett, prop, scelte, coda = null, esitoInvio = "", i = 0;
+  const calcola = () => { sett = settimanaDi(T, prossima); prop = propostaSettimana(sett); scelte = new Set(prop.filter(x => x.p).map(x => x.x.id)); coda = null; esitoInvio = ""; i = 0; };
   calcola();
   const w = document.createElement("div");
   w.className = "sheet";
@@ -11796,7 +12206,7 @@ function openSettimana(prossima){
         ? `<div class="card" style="margin-top:16px;padding:13px 14px;border-color:var(--accent)"><div class="rmeta">${i ? `Mandate ${i} su ${coda.length}.` : ""} La prossima:</div>
             <div class="rtitle" style="margin-top:3px">${esc(coda[i].x.titolo)}, ${esc(fxQuando(coda[i].p))}</div>
             <div class="btnrow"><button class="btn primary" id="st-avanti" style="flex:2">Apri Google Calendar</button><button class="btn ghost" id="st-basta" style="flex:1">Basta così</button></div></div>`
-        : `<div class="hint" style="font-size:15px;margin-top:14px">${calDiretto() ? `Fatto: ${coda.length === 1 ? "è" : `sono tutte e ${coda.length}`} sul tuo Google Calendar.` : `Fatto: le ${coda.length === 1 ? "ho mandata" : `ho mandate tutte e ${coda.length}`} a Google Calendar. Appena le salvi, le ritrovo.`}</div>`)
+        : `<div class="hint" style="font-size:15px;margin-top:14px">${calDiretto() ? esc(esitoInvio || "Invio al calendario in corso.") : `Fatto: le ${coda.length === 1 ? "ho mandata" : `ho mandate tutte e ${coda.length}`} a Google Calendar. Appena le salvi, le ritrovo.`}</div>`)
         : daMandare.length ? `<div class="btnrow"><button class="btn primary wide" id="st-google">Metti su Google le ${daMandare.length === 1 ? "proposta" : `${daMandare.length} proposte`}</button></div>
           <div class="hint">${calDiretto() ? "Le scrivo direttamente sul tuo Google Calendar." : "Te le apro una alla volta, già compilate: tocchi Salva e torni qui."}</div>` : ""}
       <div class="btnrow"><button class="btn${daMandare.length && !coda ? "" : " primary"} wide" id="st-fine">Fatto, la settimana è pianificata</button></div>
@@ -11805,23 +12215,32 @@ function openSettimana(prossima){
     w.querySelectorAll("[data-sw]").forEach(b => b.onclick = () => { prossima = b.dataset.sw === "1"; calcola(); disegna(); });
     w.querySelectorAll("[data-fxaltro]").forEach(b => b.onclick = () => openFxOrario(b.dataset.fxaltro));
     const g = w.querySelector("#st-google");
-    if (g) g.onclick = () => {
+    if (g) g.onclick = async () => {
+      g.disabled = true;
+      const invio = await verificaPrimaDiConfermare(daMandare);
+      if (!invio || !g.isConnected){ if (g.isConnected) g.disabled = false; return; }
+      if (invio.some(v => !fxTutti().some(x => x.id === v.x.id && x.stato === "aperto"))){ disegna(); toast("La selezione della settimana è cambiata."); return; }
       if (calDiretto()){
-        fxMandaMolti(daMandare.map(({ x, p }) => ({ x, p })));
-        coda = daMandare.slice(); i = coda.length; disegna(); toast("Messe su Google Calendar.");
+        coda = invio; i = invio.length; disegna();
+        fxMandaMolti(invio, ris => {
+          if (coda !== invio) return;
+          esitoInvio = ris.map((r, j) => ricevutaCalendario(invio[j].x.titolo, r)).join(" ");
+          disegna(); toast(esitoInvio);
+        });
         return;
       }
-      coda = daMandare.slice(); i = 0; manda();
+      coda = invio; i = 0; manda(true);
     };
     const av = w.querySelector("#st-avanti"); if (av) av.onclick = () => manda();
     const ba = w.querySelector("#st-basta"); if (ba) ba.onclick = () => { coda = coda.slice(0, i); disegna(); };
     w.querySelector("#st-fine").onclick = () => { S.settimane = { ...(S.settimane || {}), [sett.lun]: Date.now() }; save(); w.remove(); render(); toast(fraseSettimana(sett, [])); };
   };
-  const manda = () => {
+  const manda = giaVerificato => {
     if (!coda || i >= coda.length) return;
     const { x, p } = coda[i];
-    if (fxManda(x, p)) i++;
-    disegna();
+    const avanti = () => { i++; disegna(); };
+    if (giaVerificato === true){ if (fxManda(x, p)) avanti(); }
+    else fxMandaVerificato(x, p, avanti);
   };
   document.body.appendChild(w);
   disegna();
@@ -11829,7 +12248,7 @@ function openSettimana(prossima){
 
 /* ---------- RIMEDIA LA GIORNATA ----------
    Quando salta tutto: cosa salta, dove spostarlo, e i messaggi per le persone già scritti. */
-const RIMEDIA = [["ritardo", "Sono in ritardo"], ["mattina", "Salta la mattina"], ["pomeriggio", "Salta il pomeriggio"], ["sera", "Salta la sera"], ["resto", "Salta il resto della giornata"]];
+const RIMEDIA = [["tempo","Ho perso tempo"], ["ritardo", "Sono in ritardo"], ["mattina", "Salta la mattina"], ["pomeriggio", "Salta il pomeriggio"], ["sera", "Salta la sera"], ["resto", "Salta il resto della giornata"]];
 function rimediaVoci(tipo, ritardo){
   const T = today(), n = nowMin();
   const r = { ritardo: [n, n + ritardo + 120], mattina: [n, 13 * 60], pomeriggio: [Math.max(n, 13 * 60), 19 * 60], sera: [Math.max(n, 19 * 60), 1440], resto: [n, 1440] }[tipo];
@@ -11857,14 +12276,199 @@ function testoRimedia(tipo, ritardo, x, p){
   const cosa = { mattina: "mi è saltata la mattina", pomeriggio: "mi è saltato il pomeriggio", sera: "mi è saltata la serata", resto: "mi è saltata la giornata" }[tipo];
   return `${ciao}, oggi ${cosa} e non riesco a esserci alle ${orario(x.v.s)}. ${x.prop ? `Possiamo spostare a ${giornoEsteso(x.prop.d)} alle ${orario(x.prop.s)}?` : "Possiamo trovare un altro momento?"} Scusami!`;
 }
-function openRimedia(){
-  let tipo = null, ritardo = 20, lista = [];
+// Le ore già perse sono alle nostre spalle; un impedimento che inizia ora riduce il tempo futuro.
+function rimediaMinutiFrase(testo){
+  const m = String(testo).trim().toLowerCase().replace(/[’‘]/g, "'").match(/^(?:oggi\s+)?ho perso\s+(un'ora(?: e mezza)?|un ora(?: e mezza)?|mezz'ora|due ore|\d+\s*(?:minuti|min|ore|ora))\s*(?:[,.:;!?-]\s*)?(?:(?:oggi|di tempo)\s*)?(?:(?:cosa|che cosa|che) (?:cambia|riesco a fare)|come (?:rimedio|recupero))?[.!?]*$/i);
+  if (!m) return null;
+  const valore = m[1];
+  if (/^mezz/.test(valore)) return 30;
+  if (/^un/.test(valore)) return valore.endsWith("mezza") ? 90 : 60;
+  if (valore === "due ore") return 120;
+  const n = parseInt(valore, 10) * (/or[ea]$/.test(valore) ? 60 : 1);
+  return n > 0 && n <= 1440 ? n : null;
+}
+
+function rimediaIntervalli(inizio, fine, occupati){
+  const liberi = [];
+  let da = inizio;
+  for (const [a,b] of occupati.slice().sort((x,y) => x[0]-y[0])){
+    if (b <= da || a >= fine || b <= a) continue;
+    if (a > da) liberi.push([da, a]);
+    da = Math.max(da, b);
+    if (da >= fine) break;
+  }
+  if (da < fine) liberi.push([da, fine]);
+  return liberi;
+}
+
+function rimediaImpegni(d){
+  const fissi = busyLabeled(d).slice();
+  // Blocchi confermati in Coach o in attesa di ricevuta possono ancora mancare nella lettura Google.
+  const aggiungi = (s,e,label) => {
+    if (Number.isFinite(s) && e > s && !fissi.some(v => v.s === s && v.e === e && v.label === label))
+      fissi.push({s,e,label,src:"coach"});
+  };
+  for (const x of fxTutti()){
+    const p = x.stato === "proposto" ? x.proposta : x.stato === "aperto" ? x.quando : null;
+    if (p && p.d === d) aggiungi(p.s, p.e, x.titolo);
+  }
+  const piano = pianoDelGiorno(d);
+  for (const b of (piano && piano.blocchi) || []){
+    if (b.fatto || !(b.gia || piano.stato === "confermato")) continue;
+    const g = bloccoGcal(b);
+    if (!g) aggiungi(b.s,b.e,b.titolo);
+  }
+  return fissi;
+}
+
+// Per le attività individuali contano le fasce libere e le regole orarie personali.
+function rimediaVincoli(d){
+  const blocchi = [];
+  for (const r of S.regole || []){
+    if (r.giorni && r.giorni.length && !r.giorni.includes(dow(d))) continue;
+    if (r.tipo === "nonPrima") blocchi.push([0,toMin(r.ora)]);
+    if (r.tipo === "nonDopo") blocchi.push([toMin(r.ora),1440]);
+    if (r.tipo === "libero" || r.tipo === "pranzo") blocchi.push([toMin(r.dalle),toMin(r.alle)]);
+  }
+  return blocchi;
+}
+
+function rimediaCompiti(d){
+  const lista = [];
+  for (const a of actsOn(d)){
+    if (isDone(d,a.id)) continue;
+    const durata = Number(a.dur) || 30;
+    for (const orig of occOn(a,d))
+      lista.push({id:"att:"+a.id+":"+orig, a, orig, titolo:a.name, durata, stimata:!(Number(a.dur)>0),
+        da:toMin(a.win.start), aOra:toMin(a.win.end), entro:null, imp:2, viaggio:0});
+  }
+  const piano = pianoDelGiorno(d);
+  for (const x of pianoCandidati(d)){
+    const b = piano && (piano.blocchi || []).find(v => v.fx === x.id && v.scelto !== false && !v.fatto && !v.gia && piano.stato !== "confermato");
+    if (!b && !(x.entro && x.entro <= d)) continue;
+    const fascia = FASCE_ORE[x.fascia] || [0,1440];
+    const minutiViaggio = x.luogo && !luogoRemoto(x.luogo) ? viaggioDi(x.luogo) : 0;
+    lista.push({id:"fx:"+x.id,x,titolo:x.titolo,durata:Number(x.durata) || 60, stimata:!(Number(x.durata)>0),
+      da:fascia[0],aOra:fascia[1],entro:x.entro || null, imp:x.imp || 2, viaggio:minutiViaggio || 0, viaggioIgnoto:minutiViaggio == null, previsto:b ? b.s : null});
+  }
+  return lista;
+}
+
+function rimediaSlot(v, ora, occupati, preferito){
+  const da = Math.max(ora,awakeFrom(),v.da), fine = Math.min(awakeTo(),v.aOra);
+  const liberi = rimediaIntervalli(da,fine,occupati);
+  const max = liberi.reduce((n,[s,e]) => Math.max(n,e-s-2*v.viaggio),0);
+  const slot = pref => {
+    for (const [a,b] of liberi){
+      const s = pref == null ? a+v.viaggio : pref, e = s+v.durata;
+      if (s-v.viaggio >= a && e+v.viaggio <= b) return {s,e};
+    }
+    return null;
+  };
+  return { orario:(preferito == null ? null : slot(preferito)) || slot(null), manca: Math.max(0,v.durata-max) };
+}
+
+function simulaTempoPerso(minuti, futuro, prima){
+  const d = today(), n = nowMin(), da = futuro ? n : Math.max(0,n-minuti);
+  const riparti = futuro ? Math.min(1440,n+minuti) : n;
+  const fissi = rimediaImpegni(d), pause = S.pause && d >= S.pause.from && (!S.pause.to || d <= S.pause.to);
+  const occupati = fissi.map(v=>[v.s,v.e]).concat(rimediaVincoli(d),pause ? [[0,1440]] : []);
+  const persi = rimediaIntervalli(Math.max(da,awakeFrom()),Math.min(riparti,awakeTo()),occupati).reduce((s,[a,b])=>s+b-a,0);
+  const compiti = rimediaCompiti(d).sort((a,b)=>(b.id===prima)-(a.id===prima) || (a.entro||"9999").localeCompare(b.entro||"9999") || a.aOra-b.aOra || a.imp-b.imp || (a.previsto??1440)-(b.previsto??1440) || a.titolo.localeCompare(b.titolo));
+  const giorni = new Map();
+  const daRicollocare = new Set(compiti.map(v=>v.id));
+  const righe = compiti.map(v => {
+    const {orario,manca} = rimediaSlot(v,riparti,occupati,v.previsto);
+    if (orario) occupati.push([orario.s-v.viaggio,orario.e+v.viaggio]);
+    let dopo = null;
+    for (let i=1; !orario && !dopo && i<=7; i++){
+      const g = addDays(d,i);
+      if (v.entro && g>v.entro) break;
+      if (S.pause && g>=S.pause.from && (!S.pause.to || g<=S.pause.to)) continue;
+      if (v.a && ((v.a.days && v.a.days.length && !v.a.days.includes(dow(g))) || occOn(v.a,g).length)) continue;
+      if (!giorni.has(g)){
+        const riservati = rimediaImpegni(g).map(x=>[x.s,x.e]).concat(rimediaVincoli(g));
+        // Conserva spazio anche per le attività già previste quel giorno.
+        for (const att of rimediaCompiti(g).sort((a,b)=>a.aOra-b.aOra)){
+          if (daRicollocare.has(att.id)) continue;
+          const posto = rimediaSlot(att,awakeFrom(),riservati,att.previsto).orario;
+          if (posto) riservati.push([posto.s-att.viaggio,posto.e+att.viaggio]);
+        }
+        giorni.set(g,riservati);
+      }
+      const riservati = giorni.get(g), slot = rimediaSlot(v,awakeFrom(),riservati,null).orario;
+      if (slot){ dopo = {d:g,...slot}; riservati.push([slot.s-v.viaggio,slot.e+v.viaggio]); }
+    }
+    return {...v,orario:orario ? {d,...orario} : null,manca,dopo};
+  });
+  return {d, riparti, persi, righe, fissi:fissi.filter(v=>v.e>da && v.s<riparti)};
+}
+
+function rimediaSimulazione(w, stato, disegna, indietro){
+  const sim = simulaTempoPerso(stato.minuti,stato.futuro,stato.prima);
+  const nota = gNotaOrari(sim.d);
+  const scadenza = v => !v.entro ? "" : v.entro===sim.d ? " · scade oggi" : v.entro < sim.d ? " · già scaduta" : " · entro "+dayChip(v.entro);
+  const fascia = p => toHHMM(p.s)+"–"+toHHMM(p.e);
+  w.innerHTML = `<div class="sheetin"><button class="btn ghost" id="rm-torna">Indietro</button>
+    <h3>Ho perso tempo</h3><div class="field"><label for="rm-quanto">Minuti</label><input type="number" id="rm-quanto" min="1" max="1440" step="1" inputmode="numeric" value="${stato.minuti}"></div>
+    <div class="chips"><button class="chip${stato.futuro?"":" on"}" data-rmodo="prima">Già trascorsi</button><button class="chip${stato.futuro?" on":""}" data-rmodo="dopo">A partire da ora</button></div>
+    <p>Riparti alle ${toHHMM(Math.min(1439,sim.riparti))}. Tempo utile ${stato.futuro?"che perdi":"perso"} nelle fasce libere: ${sim.persi} min.</p>
+    ${nota ? '<p class="hint">'+esc(nota)+'</p>' : ''}
+    ${sim.fissi.length ? '<h2>Impegni da verificare nel periodo</h2><div class="card">'+sim.fissi.map(v=>'<div class="row"><div>'+esc(v.label)+' · '+fascia(v)+'</div></div>').join('')+'</div>' : ''}
+    <h2>Attività e scadenze di oggi</h2>
+    ${sim.righe.length ? sim.righe.map((v,i)=>{
+      const slot=v.orario||v.dopo, notaDurata = v.stimata ? " · durata stimata" : "";
+      const dove=v.orario ? "Oggi "+fascia(v.orario) : v.dopo ? dayChip(v.dopo.d)+" "+fascia(v.dopo) : "";
+      const copertura = v.dopo ? gNotaOrari(v.dopo.d) : "";
+      const avvisi = [v.viaggioIgnoto ? "Il tempo per raggiungere il luogo è da stimare." : "", copertura && copertura !== nota ? copertura : ""].filter(Boolean);
+      return `<div class="card" style="padding:12px;margin-bottom:8px"><strong>${esc(v.titolo)}</strong><div class="rmeta">${v.durata} min${notaDurata}${esc(scadenza(v))}</div>
+        ${!v.orario ? '<div>In questa simulazione mancano '+v.manca+' min consecutivi per completarla oggi.</div>' : ''}
+        ${dove ? '<div>'+esc(dove)+'</div>' : '<div>'+ (v.entro && v.entro<=sim.d ? "La scadenza è a rischio." : "Nessun recupero disponibile nei prossimi sette giorni entro i limiti attuali.")+'</div>'}
+        ${avvisi.length ? '<div class="hint">'+esc(avvisi.join(" "))+'</div>' : ''}
+        <div class="why">${!v.orario && i>0 ? '<button data-rprior="'+i+'">Prova a farla prima</button>' : ''}
+        ${v.x && slot ? '<button data-rcon="'+i+'">Conferma l’orario nel calendario</button>' : v.a && v.dopo ? '<button data-rcon="'+i+'">Conferma lo spostamento al '+esc(dayChip(v.dopo.d))+'</button>' : ''}</div></div>`;
+    }).join("") : '<div class="card"><div class="empty">Nessuna attività prevista nel piano o in scadenza oggi.</div></div>'}
+    <div class="btnrow"><button id="rm-chiudi" class="btn ghost wide">Chiudi</button></div></div>`;
+  w.querySelector("#rm-torna").onclick=indietro;
+  w.querySelector("#rm-chiudi").onclick=()=>w.remove();
+  w.querySelector("#rm-quanto").onchange=e=>{
+    const n = Math.round(Number(e.target.value));
+    if (!(n>=1 && n<=1440)){e.target.value=stato.minuti;return;}
+    stato.minuti=n; disegna();
+  };
+  w.querySelectorAll("[data-rmodo]").forEach(b=>b.onclick=()=>{stato.futuro=b.dataset.rmodo==="dopo";disegna();});
+  w.querySelectorAll("[data-rprior]").forEach(b=>b.onclick=()=>{stato.prima=sim.righe[+b.dataset.rprior].id;disegna();});
+  w.querySelectorAll("[data-rcon]").forEach(b=>b.onclick=async ()=>{
+    const v=sim.righe[+b.dataset.rcon], p=v.orario||v.dopo;
+    const fresco=simulaTempoPerso(stato.minuti,stato.futuro,stato.prima);
+    const attuale=fresco.righe.find(x=>x.id===v.id), dest=attuale && (attuale.orario||attuale.dopo);
+    if (fresco.d!==sim.d || !dest || dest.d!==p.d || dest.s!==p.s || dest.e!==p.e){ disegna(); toast("La disponibilità è cambiata. Controlla la nuova proposta."); return; }
+    if (attuale.x){
+      if (b.disabled) return;
+      b.disabled=true;
+      try {
+        await fxMandaVerificato(attuale.x,dest,()=>{w.remove(); render(); if (!calDiretto()) toast("Completa il salvataggio nel calendario aperto.");});
+      } finally { b.disabled=false; }
+    } else if (attuale.a && attuale.dopo){
+      moveOcc(attuale.a,attuale.orig,dest.d); runEngine(); save(); disegna(); toast("Attività spostata di giorno. La fascia resta indicativa.");
+    }
+  });
+}
+
+
+function openRimedia(primiMinuti){
+  let tipo = Number.isFinite(primiMinuti) ? "tempo" : null, ritardo = 20, lista = [];
+  const simulazione = {minuti: Math.min(1440,Math.max(1,Math.round(primiMinuti || 60))), futuro:false, prima:null};
   const fatti = new Set();
-  const calcola = () => { lista = tipo ? rimediaVoci(tipo, ritardo) : []; fatti.clear(); };
+  const calcola = () => { lista = tipo && tipo !== "tempo" ? rimediaVoci(tipo, ritardo) : []; fatti.clear(); };
   const w = document.createElement("div");
   w.className = "sheet";
   const disegna = () => {
     const T = today();
+    if (tipo === "tempo"){
+      rimediaSimulazione(w,simulazione,disegna,()=>{tipo=null;disegna();});
+      return;
+    }
     if (!tipo || (tipo === "ritardo" && !ritardo)){
       w.innerHTML = `<div class="sheetin"><h3>Rimedia la giornata</h3>
         <div class="hint" style="font-size:15px;margin:-8px 0 14px">Cosa è successo? Ti dico cosa salta, dove spostarlo, e ti preparo i messaggi per le persone.</div>
@@ -12015,7 +12619,13 @@ function anteprimaMulti(box, lista, alla, opts){
     box.querySelectorAll("[data-mt]").forEach(b => b.onclick = () => { aperta = aperta === +b.dataset.mt ? -1 : +b.dataset.mt; disegna(); });
     box.querySelectorAll("[data-mtk]").forEach(b => b.onclick = () => { const [i, k] = b.dataset.mtk.split(":"); forzaTipo(lista[+i], k); aperta = -1; disegna(); });
     box.querySelectorAll("[data-mux]").forEach(b => b.onclick = () => { lista.splice(+b.dataset.mux, 1); aperta = -1; disegna(); });
-    box.querySelector("#mu-salva").onclick = () => { const n = salvaTutte(lista); if (alla) alla(n); };
+    box.querySelector("#mu-salva").onclick = async e => {
+      const pulsante = e.currentTarget; pulsante.disabled = true;
+      const scelta = await verificaRichiestaChat(lista.map(r => ({ tipo: "frase", on: true, r })));
+      pulsante.disabled = false;
+      if (!scelta || !pulsante.isConnected) return;
+      const n = salvaTutte(scelta.azioni.map(a => a.r)); if (alla) alla(n);
+    };
   };
   disegna();
 }
@@ -12456,7 +13066,15 @@ function openPianoGiorno(d, opts){
     ieriAz("data-pgfatta", (g, id) => bloccoFatto(g, id, true));
     ieriAz("data-pgriporta", (g, id) => bloccoRiporta(g, id, d));
     ieriAz("data-pgtogli", (g, id) => bloccoTogli(g, id));
-    const ok = q("#pg-ok"); if (ok) ok.onclick = () => confermaPiano(d, piano, () => { taci(); w.remove(); PIANO_APERTO = null; render(); });
+    const ok = q("#pg-ok"); if (ok) ok.onclick = async () => {
+      ok.disabled = true; ok.textContent = "Controllo gli orari…";
+      const controllato = structuredClone(piano);
+      const orari = await verificaPrimaDiConfermare(orariPianoPerVerifica(d, controllato));
+      if (!orari || !ok.isConnected){ if (ok.isConnected) disegna(); return; }
+      if (pianoDelGiorno(d)?.stato === "confermato"){ w.remove(); PIANO_APERTO = null; render(); return; }
+      for (const { p, blocco } of orari){ blocco.s = p.s; blocco.e = p.e; }
+      confermaPiano(d, controllato, () => { taci(); w.remove(); PIANO_APERTO = null; render(); });
+    };
     const ri = q("#pg-riporta"); if (ri) ri.onclick = () => { const n = riportaNonFatte(d); save(); w.remove(); PIANO_APERTO = null; render(); toast(n === 1 ? "Messa fra le cose di domani." : `Messe fra le cose di domani: ${n}.`); };
     const rf = q("#pg-rifai"); if (rf) rf.onclick = () => {
       const nuovo = proponiPiano(d, piano.blocchi);
@@ -12527,19 +13145,20 @@ function confermaPiano(d, piano, dopo){
   piano.stato = "confermato";
   piano.at = Date.now();
   S.piano[d] = piano;
-  if (!coppie.length){ save(); toast("Piano confermato."); if (dopo) dopo(); return; }
+  if (!coppie.length){ save(); toast("Piano confermato in Coach."); if (dopo) dopo("Piano confermato in Coach."); return; }
   if (calDiretto()){
     fxMandaMolti(coppie, ris => {
       coppie.forEach(({ x }, i) => { const b = S.piano[d] && S.piano[d].blocchi.find(y => y.fx === x.id); if (b && ris[i] && ris[i].ok){ b.chiave = ris[i].key || null; b.idLocale = ris[i].idLocale || null; } });
       save();
+      const esito = ris.map((r, i) => ricevutaCalendario(coppie[i].x.titolo, r)).join(" ");
+      toast(esito);
+      if (dopo) dopo(esito);
     });
-    toast(coppie.length === 1 ? "Confermato: è sul tuo Google Calendar." : `Confermato: ${coppie.length} cose sul tuo Google Calendar.`);
-    if (dopo) dopo();
     return;
   }
   // senza scrittura diretta: Google Calendar si apre già compilato, una cosa alla volta
   save();
-  if (dopo) dopo();
+  if (dopo) dopo("Piano salvato in Coach. Gli appuntamenti vanno ancora salvati su Google Calendar.");
   openCodaGoogle(coppie);
 }
 
@@ -12562,7 +13181,7 @@ function openCodaGoogle(coppie){
         <div class="btnrow"><button class="btn ghost wide" id="cg-x">Basta così</button></div>`;
     }
     const q = s => w.querySelector(s);
-    if (q("#cg-apri")) q("#cg-apri").onclick = () => { const { x, p } = coppie[i]; if (fxManda(x, p)) { i++; disegna(); } };
+    if (q("#cg-apri")) q("#cg-apri").onclick = () => { const { x, p } = coppie[i]; fxMandaVerificato(x, p, () => { i++; disegna(); }); };
     if (q("#cg-salta")) q("#cg-salta").onclick = () => { i++; disegna(); };
     q("#cg-x").onclick = () => { w.remove(); render(); };
   };
@@ -13000,7 +13619,7 @@ function renderSegretaria(){
       <div class="tb-main" style="cursor:default">
         <div class="dayname">${GG[d.getDay()]} ${prettyDate(T)}<span class="dot" style="padding:0 6px">·</span><span class="ora" id="tb-ora">${toHHMM(nowMin())}</span></div>
         <div class="datebig">${pausa ? "Sei via." : saluto()}</div>
-        <div class="tb-note"><span>${esc(pausa ? "La segretaria aspetta che torni." : rigaGiorno(T))}</span></div>
+        ${!pausa && fasciaOra() === "mattina" ? "" : `<div class="tb-note"><span>${esc(pausa ? "La segretaria aspetta che torni." : rigaGiorno(T))}</span></div>`}
       </div>
       <button class="tb-side" id="casa-opz" aria-label="Impostazioni">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
@@ -13017,7 +13636,7 @@ function renderSegretaria(){
       <div class="brevetxt">Lì la segretaria usa Claude con il tuo piano, legge e scrive Google Calendar anche dall'iPhone e i dati sono uguali su tutti i dispositivi. Questa versione resta, ma senza Claude.</div>
       <div class="btnrow" style="margin-top:10px"><a class="btn primary" href="${COACH_SU_CLAUDE}" target="_blank" rel="noopener" style="flex:2;display:block;text-align:center;text-decoration:none">Apri Coach su Claude</a><button class="btn ghost" id="suclaude-dopo" style="flex:1">Più tardi</button></div></div>`}
 
-    ${pausa ? "" : `<section class="riq" data-riq="punto">${puntoCardHTML()}</section>`}
+    ${pausa ? "" : `<section class="riq" data-riq="punto">${puntoCardHTML(qs)}</section>`}
     <section class="riq" id="cv-sez">${conversaHTML()}</section>
     ${pausa || !giornoPianifica(T) || settimanaFatta(settimanaDi(T).lun) ? "" : `<div class="card breve" style="margin-top:12px">
       <div class="brevetxt">È il giorno per pianificare la settimana: cinque minuti, quando vuoi.</div>
@@ -13033,6 +13652,7 @@ function renderSegretaria(){
     <div class="casalink">
       <button class="btn" id="casa-sett">La settimana</button>
       <button class="btn" id="casa-persone">Persone</button>
+      <button class="btn" id="casa-adesso">Cosa riesco a fare adesso?</button>
       <button class="btn" id="casa-guardaroba">Guardaroba</button>
       <button class="btn" id="casa-rimedia">Rimedia la giornata</button>
       <button class="btn" id="casa-giornata">La giornata completa</button>
@@ -13042,7 +13662,131 @@ function renderSegretaria(){
   bindAll();
   bindCasa();
   // il punto: lo scrive Claude una volta per parte del giorno (mattina, pomeriggio, sera)
-  if (!pausa && claudePronto() && !puntoDi(T) && !PUNTO_IN_CORSO) setTimeout(() => { if (TAB === "oggi" && !puntoDi(today())) puntoScrivi(false); }, 300);
+  if (!pausa && claudePronto() && !puntoDi(T) && !puntoErroreDi(T) && !PUNTO_IN_CORSO) setTimeout(() => { if (TAB === "oggi" && !puntoDi(today())) puntoScrivi(false); }, 300);
+}
+
+// Tempo utile: solo lettura, dalla disponibilità di questo momento a una singola proposta.
+function minutiDomandaAdesso(testo){
+  let t = norm(testo).replace(/[.,:;!?]/g, " ").replace(/\s+/g, " ").trim();
+  if (/\b(domani|ieri|stasera)\b/.test(t)) return undefined;
+  t = t.replace(/\b(?:un quarto d['’ ]ora)\b/g, "15 minuti")
+    .replace(/\b(?:mezz['’ ]ora|mezza ora)\b/g, "30 minuti")
+    .replace(/\bun['’ ]ora\b/g, "60 minuti");
+  const dur = /^(?:ho\s+)?(\d{1,4})\s*(?:minuti|minuto|min)\b/;
+  const rilevata = dur.exec(t);
+  if (rilevata) t = t.slice(rilevata[0].length).trim();
+  const domanda = /^(?:(?:che )?cosa|che) (?:riesco a fare|posso fare|faccio|riesco a portare a termine)(?: (adesso|ora|in questo tempo))?(?: (?:in|con) (\d{1,4}) (?:minuti|minuto|min))?$/;
+  const m = domanda.exec(t);
+  if (!m || (!rilevata && !m[1] && !m[2])) return undefined;
+  return rilevata || m[2] ? Number(rilevata ? rilevata[1] : m[2]) : null;
+}
+function consiglioAdesso(budget){
+  const d = today(), n = nowMin(), nota = gNotaOrari(d);
+  const risultato = (testo, voce = null) => ({ testo: [testo, nota].filter(Boolean).join(" "), voce });
+  if (isPaused()) return risultato("Coach è in pausa. Puoi riprendere la giornata dalla schermata principale.");
+  if (n < awakeFrom() || n >= awakeTo()) return risultato("Sei fuori dalla fascia di veglia impostata.");
+  if (budget !== null && (!Number.isInteger(budget) || budget < 1 || budget > 1440)) return risultato("Indica da 1 a 1440 minuti.");
+  const vincoli = busyLabeled(d).slice();
+  const piano = pianoDelGiorno(d);
+  const blocchi = piano && piano.stato === "confermato" ? piano.blocchi || [] : [];
+  for (const b of blocchi) if (!b.fatto) vincoli.push({ s:b.s, e:b.e, label:b.titolo });
+  const prenotati = new Set(blocchi.map(b => b.fx).filter(Boolean));
+  const trasferte = [];
+  function aggiungiPartenza(ev){
+    if (ev.s <= n) return;
+    const parti = partenzaDi(ev);
+    if (parti !== null){
+      vincoli.push({ s:Math.max(0, parti), e:ev.s, label:"Partenza per " + ev.titolo });
+    } else if (!luogoRemoto(luogoDi(ev)) && viaggioEv(ev) === null){
+      trasferte.push(ev);
+    }
+  }
+  for (const ev of impegniTra(d, d)){
+    if ((ev.o && ev.o.busy === false) || (ev.g && !gcBusy(ev.g))) continue;
+    // Un invio pendente potrebbe essere già arrivato sul calendario.
+    if (ev.x && ev.x.stato === "proposto") vincoli.push({s:ev.s, e:ev.e, label:ev.titolo});
+    aggiungiPartenza(ev);
+  }
+  if (S.gcalOn) for (const g of GCAL.byDay[d] || []){
+    if (g.recurring && gcBusy(g)) aggiungiPartenza({ ref:"gc:" + g.key, s:g.s, titolo:g.label, luogo:g.inst && g.inst.place || "" });
+  }
+  const inCorso = vincoli.filter(v => v.s <= n && n < v.e).sort((a,b) => b.e-a.e)[0];
+  if (inCorso) return risultato("Sei già impegnato fino alle " + toHHMM(inCorso.e) + " con «" + inCorso.label + "».");
+  const limite = vincoli.filter(v => v.s > n).sort((a,b) => a.s-b.s)[0];
+  const fine = Math.min(awakeTo(), limite ? limite.s : 1440, n + (budget ?? 1440));
+  const minuti = fine - n;
+  const confine = limite && fine === limite.s ? " Prima di «" + limite.label + "» alle " + toHHMM(limite.s) + "." : "";
+  const viaggioIncerto = trasferte.find(ev => ev.s === (limite && limite.s));
+  const avviso = viaggioIncerto ? " Verifica il tempo di viaggio per «" + viaggioIncerto.titolo + "»: è sconosciuto." : "";
+  const intro = (nota || viaggioIncerto ? "Finestra indicativa: " : "Finestra disponibile: ") + minuti + " min." + confine + avviso;
+  const possibili = [];
+  let senzaDurata = 0, senzaViaggio = 0;
+  function candidato(v, da = 0, a = 1440){
+    if (!v.titolo || n < da || n >= a) return;
+    if (!(v.durata > 0)){ senzaDurata++; return; }
+    const termine = n + v.durata + (v.strada || 0);
+    if (termine > Math.min(fine, a) || regoleRotte(d, n, termine, {}).length) return;
+    possibili.push(v);
+  }
+  for (const x of pianoCandidati(d)){
+    if (prenotati.has(x.id)) continue;
+    const ev = { ref:"fx:" + x.id, luogo:x.luogo || "" };
+    let strada = 0;
+    if (!luogoRemoto(luogoDi(ev))){
+      const viaggio = viaggioEv(ev);
+      if (viaggio === null){ senzaViaggio++; continue; }
+      strada = 2 * viaggio;
+    }
+    const fascia = x.fascia && FASCE_ORE[x.fascia];
+    const progetto = x.progetto && (S.progetti || []).find(p => p.id === x.progetto);
+    const durata = progetto ? Math.min(+x.durata || 0, progettoConti(progetto,d).manca) : +x.durata;
+    candidato({ id:x.id, tipo:"fx", titolo:x.titolo, durata, strada, fonte:"previsti", entro:progetto ? progetto.entro : x.entro,
+      promessa:!!(x.origine && x.origine.compito), imp:x.imp || 2 }, fascia ? fascia[0] : 0, fascia ? fascia[1] : 1440);
+  }
+  const affidate = new Set(attesaAperte().map(a => a.origine && a.origine.attivita).filter(Boolean));
+  for (const a of actsOn(d)){
+    if (isDone(d,a.id) || affidate.has(a.id)) continue;
+    const tempi = ((S.durLog || {})[a.id] || []).filter(m => Number.isFinite(m) && m>0);
+    const misurata = tempi.length >= 3;
+    const durata = misurata ? Math.ceil(median(tempi)) : +a.dur;
+    candidato({ id:a.id, tipo:"att", titolo:a.name, durata,
+      fonte:misurata ? "stimati dalla mediana di " + tempi.length + " sessioni" : "previsti",
+      entro:null, oggi:true, imp:2 }, a.win ? toMin(a.win.start) : 0, a.win ? toMin(a.win.end) : 1440);
+  }
+  function ordine(v){
+    if (v.entro && v.entro <= d) return 0;
+    if (v.promessa) return 1;
+    if (v.entro && daysBetween(d,v.entro) <= 2) return 2;
+    return v.oggi ? 3 : 4;
+  }
+  possibili.sort((a,b) => ordine(a)-ordine(b) || (a.entro || "9999").localeCompare(b.entro || "9999") ||
+    (+!!b.promessa)-(+!!a.promessa) || a.imp-b.imp || (a.durata + (a.strada || 0))-(b.durata + (b.strada || 0)) || a.titolo.localeCompare(b.titolo));
+  const v = possibili[0];
+  if (!v) return risultato(intro + " Non trovo un’attività che puoi completare adesso." + (senzaDurata ? " Per alcune attività manca la durata." : "") + (senzaViaggio ? " Per alcune attività manca il tempo di viaggio." : ""));
+  const motivi = [];
+  if (v.entro) motivi.push(v.entro < d ? "era da finire il " + prettyDate(v.entro) : v.entro === d ? "scade oggi" : "scade il " + prettyDate(v.entro));
+  if (v.promessa) motivi.push("è un impegno preso in riunione");
+  if (!motivi.length) motivi.push(v.oggi ? "è prevista per oggi" : v.imp === 1 ? "ha priorità alta" : "rientra nel tempo disponibile");
+  return risultato(intro + " Ti suggerisco «" + v.titolo + "»: " + v.durata + " min " + v.fonte + (v.strada ? " più " + v.strada + " min di andata e ritorno" : "") + ", " + motivi.join(" ed ") + ".", v);
+}
+function apriAdesso(){
+  const w = foglio('<h3>Cosa riesco a fare adesso?</h3><label for="adesso-min">Quanti minuti hai?</label><input id="adesso-min" type="number" min="1" max="1440" inputmode="numeric" placeholder="Fino al prossimo impegno" style="width:100%;font-size:16px;padding:10px"><p id="adesso-esito" aria-live="polite"></p><div class="btnrow"><button class="btn" id="adesso-apri">Apri attività</button><button class="btn" id="adesso-chiudi">Chiudi</button></div>');
+  const campo = w.querySelector("#adesso-min"), apri = w.querySelector("#adesso-apri");
+  let voce = null;
+  const aggiorna = () => {
+    const esito = consiglioAdesso(campo.validity.badInput ? NaN : campo.value === "" ? null : Number(campo.value));
+    w.querySelector("#adesso-esito").textContent = esito.testo;
+    voce = esito.voce;
+    apri.hidden = !voce;
+  };
+  campo.oninput = aggiorna;
+  apri.onclick = () => {
+    if (!voce) return;
+    w.remove();
+    if (voce.tipo === "fx") openFx(voce.id); else openDoAct(voce.id,today());
+  };
+  w.querySelector("#adesso-chiudi").onclick = () => w.remove();
+  aggiorna();
 }
 
 function bindCasa(){
@@ -13050,8 +13794,19 @@ function bindCasa(){
   one("casa-opz", () => { TAB = "opzioni"; OPTSUB = null; render(); });
   one("punto-leggi", () => { if (PARLA_ORA){ taci(); aggiornaTastoParla(); return; } sbloccaVoce(); parla(puntoTesto()); aggiornaTastoParla(); });
   one("punto-rifai", () => puntoScrivi(true));
+  const dettagli = el.querySelector("#punto-completo");
+  if (dettagli) dettagli.ontoggle = () => { if (dettagli.isConnected) PUNTO_CHIUSO = dettagli.open ? "" : today(); };
+  one("punto-decidi", () => {
+    const b = el.querySelector("#punto-decidi");
+    const q = domande(today()).find(v => v.id === b.dataset.qid);
+    if (!q){ render(); return; }
+    const w = foglio(`<h3>Da decidere</h3>${domandaHTML(q)}<div class="btnrow"><button class="btn ghost" data-chiudi-decisione>Chiudi</button></div>`);
+    w.querySelector("[data-chiudi-decisione]").onclick = () => w.remove();
+    bindDomande(w, () => { w.remove(); render(); }, () => w.remove());
+  });
   bindConversa();
   bindProgetti(el);
+  one("casa-adesso", apriAdesso);
   one("casa-guardaroba", () => { TAB = "guardaroba"; GDSUB = "capi"; render(); });
   one("casa-persone", () => { PROGSUB = "persone"; PROG_DA = "oggi"; TAB = "base"; render(); });
   el.querySelectorAll("[data-pmgoogle]").forEach(b => b.onclick = () => { b.disabled = true; b.textContent = "Scrivo…"; promemoriaSuGoogle(b.dataset.pmgoogle, b.dataset.pmd).then(ok => { b.disabled = false; b.textContent = ok ? "Sono nell'evento" : "Mettili nell'evento su Google"; }); });
@@ -13246,8 +14001,14 @@ function promemoriaCardHTML(){
   const T = today();
   let d = T, lista = promemoriaDel(T), titolo = "Oggi vedi";
   if (!lista.length && fasciaOra() === "sera"){ d = addDays(T, 1); lista = promemoriaDel(d); titolo = "Domani vedi"; }
-  if (!lista.length) return "";
-  return `<div class="hrow"><h2>${titolo}</h2></div>` + lista.map(({ ev, dire, chi }) => `<div class="card" style="margin-bottom:10px">
+  const fino = fasciaOra() === "sera" ? addDays(T,1) : T;
+  const prossimo = impegniTra(T,fino).find(e => (e.d > T || e.s >= nowMin()) && eIncontro(e) && personeDi(e).length);
+  const pendenti = prossimo ? sospesiIncontro(prossimo) : [];
+  const ricorda = pendenti.length ? `<div class="card"><button class="actrow" data-piano="${esc(prossimo.ref)}">
+    <div class="rbody"><div class="rtitle">Prima di ${esc(prossimo.titolo)} · ${prossimo.d === T ? "oggi" : "domani"} alle ${orario(prossimo.s)}</div>
+    <div class="rmeta">${esc(pendenti.slice(0,2).map(a => (a.tipo === "mio" ? "Hai promesso: " : "Aspetti da " + a.nome + ": ") + a.testo).join(" · "))}</div></div></button></div>` : "";
+  if (!lista.length) return ricorda;
+  return ricorda + `<div class="hrow"><h2>${titolo}</h2></div>` + lista.map(({ ev, dire, chi }) => `<div class="card" style="margin-bottom:10px">
     <div class="rmeta" style="padding:12px 14px 0">${d === T ? "Alle" : "Domani alle"} ${orario(ev.s)} · ${esc(ev.titolo)}${chi.length ? ` · ${esc(chi.map(p => p.nome).join(", "))}` : ""}</div>
     ${dire.map(dadireRigaHTML).join("")}
     <div class="segbar">
@@ -13345,6 +14106,8 @@ function contestoSegretaria(opts){
     for (const a of att) righe.push(`- da fare ${a.win.start}–${a.win.end}: ${a.name}${toMin(a.win.start) >= 18 * 60 ? " (la sera)" : ""}, si ripete ${a.rec && a.rec.type === "weekly" ? "ogni settimana" : "regolarmente"}`);
     for (const r of prom) righe.push(`- promemoria: ${r.text}`);
   }
+  const notaOrari = gNotaOrari();
+  if (notaOrari) righe.push(`COPERTURA DELL’AGENDA: ${notaOrari} Quando proponi un orario, esplicita che è indicativo.`);
   // spazi liberi e serate libere: dove proporre le cose da programmare
   const liberi = [], serate = [];
   for (let i = 0; i < 14; i++){
@@ -13452,10 +14215,47 @@ ${contestoSegretaria({ giorni: fascia === "mattina" ? 3 : 4 })}`;
   return claudeChiedi(prompt, { tier: tierPer("punto"), onText, cache: false });
 }
 
+// Il punto breve usa i dati attuali, anche quando è già disponibile un riepilogo scritto.
+let PUNTO_CHIUSO = "";   // il punto completo resta aperto; chiuso solo se lo chiudi tu, fino a domani
+function mattinoDecisione(qs){
+  const vincolo = qs.find(q => /^(ov|strada|stretta):/.test(q.id) && Number.isFinite(q.g) && q.g <= (q.id.startsWith("stretta:") ? 2 : 0));
+  if (vincolo) return vincolo;
+  return qs.find(q => Number.isFinite(q.g) && q.g <= 0 &&
+    ["scadenza", "attesa", "fissare", "giorno", "metti"].includes(q.tipo)) || null;
+}
+function mattinoProssimo(d, ora){
+  const voci = agendaGiorno(d).filter(v => !v.tutto && Number.isFinite(v.s) && v.e > ora)
+    .sort((a, b) => a.s - b.s || a.e - b.e);
+  const v = voci[0];
+  const nota = gNotaOrari(d);
+  if (!v) return nota ? "Nessun prossimo impegno nei dati disponibili. " + nota : "Nessun altro impegno con orario oggi.";
+  const ref = v.key ? "gc:" + v.key : v.o ? "ev:" + v.o.id : v.x ? "fx:" + v.x.id : "";
+  const inCorso = v.s <= ora;
+  let frase = inCorso ? `In corso: ${v.titolo}, fino alle ${toHHMM(v.e)}.` : `Alle ${toHHMM(v.s)}: ${v.titolo}.`;
+  if (v.x && v.x.stato === "proposto") frase += " In attesa di conferma nel calendario.";
+  if (!inCorso){
+    const partenza = partenzaDi({ ...v, ref, d });
+    if (partenza !== null && partenza >= 0) frase += partenza > ora
+      ? ` Parti alle ${toHHMM(partenza)}.` : ` È ora di partire (partenza prevista alle ${toHHMM(partenza)}).`;
+  }
+  return nota ? frase + " " + nota : frase;
+}
+function mattinoBreveHTML(qs){
+  const q = mattinoDecisione(qs);
+  const prima = q ? `<div class="brevetxt"><b>Da decidere</b> · ${esc(q.chi)}. ${esc(q.testo)}</div>` : "";
+  return prima + `<p style="margin:6px 0">${esc(mattinoProssimo(today(), nowMin()))}</p>` +
+    (q ? `<button class="btn" id="punto-decidi" data-qid="${esc(q.id)}">Vedi le opzioni</button>` : "");
+}
+
 let PUNTO_IN_CORSO = false;
+let PUNTO_ERRORE = null;
+function puntoErroreDi(d){
+  return PUNTO_ERRORE && PUNTO_ERRORE.d === d && PUNTO_ERRORE.fascia === fasciaOra()
+    ? PUNTO_ERRORE.nota : "";
+}
 async function puntoScrivi(forza){
   const T = today(), fascia = fasciaOra();
-  if (!forza && puntoDi(T)) return;
+  if (!forza && (puntoDi(T) || puntoErroreDi(T))) return;
   if (!claudePronto()){ return; }
   if (PUNTO_IN_CORSO) return;
   PUNTO_IN_CORSO = true;
@@ -13463,13 +14263,15 @@ async function puntoScrivi(forza){
   if (box && forza) box.classList.add("attesa");
   try {
     const testo = await puntoClaude(({ text }) => { const b = document.getElementById("punto-t"); if (b){ b.textContent = text; b.classList.remove("attesa"); } });
+    const breve = String(testo || "").trim();
+    if (!breve) throw new Error("Claude ha restituito un riepilogo vuoto.");
+    PUNTO_ERRORE = null;
     S.punto = S.punto || {};
-    S.punto[T] = { testo: String(testo || "").trim(), fascia, at: Date.now(), fonte: "claude" };
+    S.punto[T] = { testo: breve, fascia, at: Date.now(), fonte: "claude" };
     for (const k of Object.keys(S.punto)) if (k < addDays(T, -7)) delete S.punto[k];
     save();
   } catch(e){
-    const nota = document.getElementById("punto-nota");
-    if (nota) nota.textContent = e && e.message ? e.message : "Claude non risponde: questo è il punto fatto con le mie regole.";
+    PUNTO_ERRORE = { d: T, fascia, nota: e && e.message ? e.message : "Claude non risponde." };
   } finally {
     PUNTO_IN_CORSO = false;
     const b = document.getElementById("punto-t"); if (b) b.classList.remove("attesa");
@@ -13478,17 +14280,21 @@ async function puntoScrivi(forza){
 }
 const puntoTesto = () => { const p = puntoDi(today()); return p ? p.testo : puntoLocale(); };
 
-function puntoCardHTML(){
+function puntoCardHTML(domandeOggi){
   const p = puntoDi(today());
   const scrive = PUNTO_IN_CORSO;
+  const errore = puntoErroreDi(today());
+  const mattina = fasciaOra() === "mattina" && Array.isArray(domandeOggi);
   return `<div class="card punto">
     <div class="adlab">${PUNTO_TITOLO[fasciaOra()]}</div>
+    ${mattina ? mattinoBreveHTML(domandeOggi) + `<details id="punto-completo" style="margin-top:10px"${PUNTO_CHIUSO === today() ? "" : " open"}><summary style="cursor:pointer;padding:5px 0">Il punto completo</summary>` : ""}
     <div class="brevetxt${scrive && !p ? " attesa" : ""}" id="punto-t">${esc(p ? p.testo : puntoLocale())}</div>
-    <div class="rmeta" id="punto-nota" style="margin-top:6px">${p ? "" : claudePronto() ? (scrive ? "Claude sta scrivendo il punto…" : "") : IN_CLAUDE ? "" : "Il punto fatto con le mie regole. Dentro Claude lo scrive Claude."}</div>
+    <div class="rmeta" id="punto-nota" style="margin-top:6px">${scrive ? "Claude sta scrivendo il punto…" : errore ? esc(errore) + (p ? " Qui trovi l’ultimo riepilogo." : " Qui trovi il riepilogo di Coach.") : p || IN_CLAUDE ? "" : "Il punto fatto con le mie regole. Dentro Claude lo scrive Claude."}</div>
     <div class="segbar">
       ${puoParlare() ? `<button class="btn primary" id="punto-leggi" data-parla>${PARLA_ORA ? "Basta così" : "Leggimelo"}</button>` : ""}
-      ${claudePronto() ? `<button class="btn" id="punto-rifai">${p ? "Aggiorna" : "Fallo scrivere a Claude"}</button>` : ""}
+      ${claudePronto() ? `<button class="btn" id="punto-rifai">${errore ? "Riprova" : p ? "Aggiorna" : "Fallo scrivere a Claude"}</button>` : ""}
     </div>
+    ${mattina ? "</details>" : ""}
   </div>`;
 }
 
@@ -13580,39 +14386,38 @@ async function cercaAgenda(inp){
   if (daysBetween(dal, al) > 400) al = addDays(dal, 400);
   const testo = String((inp && inp.testo) || "").trim().slice(0, 80);
   const raggruppa = !testo && daysBetween(dal, al) > 7;
-  let righe = [];
-  if (gApi()){
-    const evs = [];
-    for (const c of (GAPI.calendari || [])){
-      if (S.gcalOff.includes(gCalKey(c))) continue;
-      let token = null, giri = 0;
-      do {
-        const q = { startTime: `${dal}T00:00:00`, endTime: `${addDays(al, 1)}T00:00:00`, pageSize: 250, orderBy: "startTime" };
-        if (!c.primario) q.calendarId = c.id;
-        if (testo) q.fullText = testo;
-        if (token) q.pageToken = token;
-        let r;
-        try { r = await CAP.mcp.callTool(GSERVER, "list_events", q, { cache: false }); }
-        catch(e){ if (c.primario) throw new Error(gErrore(e)); break; }
-        const p = (r && r.payload) || {};
-        for (const ev of (p.events || p.items || [])) if (ev && ev.status !== "cancelled" && ev.start) evs.push(ev);
-        token = p.nextPageToken || null;
-      } while (token && ++giri < 3);
+  let righe = [], nota = "";
+  if (gApi() && S.gcalOn){
+    if (!GAPI.calendari) await gLeggi();
+    const evs = [], incompleti = [];
+    const attivi = (GAPI.calendari || []).filter(c => !S.gcalOff.includes(gCalKey(c)));
+    if (!attivi.length) nota = "Nessun calendario Google disponibile per questa ricerca.";
+    const q = { startTime: `${dal}T00:00:00`, endTime: `${addDays(al, 1)}T00:00:00`, pageSize: 250, orderBy: "startTime" };
+    if (testo) q.fullText = testo;
+    for (const c of attivi){
+      let lettura;
+      try { lettura = await gPagineEventi(c, q, 3); }
+      catch(e){ throw new Error(gErrore(e)); }
+      if (!lettura.completo) incompleti.push(c.nome);
+      for (const ev of lettura.eventi) if (ev && ev.status !== "cancelled" && ev.start) evs.push(ev);
     }
+    if (incompleti.length) nota = `Risultati parziali (${incompleti.join(", ")}).`;
     righe = righeEventiGoogle(evs, raggruppa);
   } else if (S.gcalOn){
     const t = norm(testo);
     for (const g of GCAL.list) if (g.date >= dal && g.date <= al && (!t || norm(`${g.label} ${g.place} ${g.note}`).includes(t)))
       righe.push(`${g.date} ${g.allDay ? "tutto il giorno" : `${g.start}–${g.end}`} ${g.label}${g.place ? ` (${g.place})` : ""}`);
   }
+  if (!gApi() || !S.gcalOn) nota = gNotaOrari();
   // quello che è solo in Coach (segnato qui, o fissato e non ancora riletto da Google)
   const t = norm(testo);
   for (const ev of impegniTra(dal, al)) if (ev.fonte !== "gc" && (!t || norm(`${ev.titolo} ${ev.luogo}`).includes(t)))
     righe.push(`${ev.d} ${toHHMM(ev.s)}–${toHHMM(ev.e)} ${ev.titolo}${ev.luogo ? ` (${ev.luogo})` : ""} [segnato in Coach]`);
   righe.sort();
   const tot = righe.length;
-  if (!tot) return `Nessun impegno fra il ${dal} e il ${al}${testo ? ` con «${testo}»` : ""}.`;
-  return `${tot} impegni fra il ${dal} e il ${al}${testo ? ` con «${testo}»` : ""}:\n${righe.slice(0, 120).join("\n")}${tot > 120 ? `\n(e altri ${tot - 120}: restringi le date)` : ""}`;
+  const avviso = nota ? nota + " " : "";
+  if (!tot) return `${avviso}${nota ? "Nessun impegno nei dati consultati" : "Nessun impegno"} fra il ${dal} e il ${al}${testo ? ` con «${testo}»` : ""}.`;
+  return `${avviso}${tot} impegni fra il ${dal} e il ${al}${testo ? ` con «${testo}»` : ""}:\n${righe.slice(0, 120).join("\n")}${tot > 120 ? `\n(e altri ${tot - 120}: restringi le date)` : ""}`;
 }
 function schedaPersona(nome){
   const n = norm(nome);
@@ -13625,6 +14430,7 @@ function schedaPersona(nome){
   return {
     nome: p.nome, ruolo: p.ruolo || "", citta: p.citta || "", telefono: p.tel || "", email: p.email || "", compleanno: p.compleanno || "",
     note: String(p.note || "").slice(0, 800), sentirla_ogni_giorni: p.ogni || null, ultima_volta_sentita: p.ultimo || null,
+    impegni_aperti: sospesiIncontro({ ref:"", d:T },[p]).slice(0,20).map(a => ({ chi:a.tipo === "mio" ? "Io" : a.nome, cosa:a.testo, entro:a.entro || null })),
     promemoria_aperti: dd.filter(x => !x.fatto).map(x => x.testo),
     promemoria_fatti: dd.filter(x => x.fatto).slice(-10).map(x => `${x.testo} (fatto il ${x.fatto})`),
     prossimi_impegni: impegniTra(T, addDays(T, 90)).filter(conLei).slice(0, 10).map(riga),
@@ -13657,7 +14463,8 @@ function spaziLiberi(inp){
   const dur = +(inp && inp.durata_minuti) > 0 ? Math.min(600, +inp.durata_minuti) : 30;
   const fascia = ["mattina", "pranzo", "pomeriggio", "sera"].includes(inp && inp.fascia) ? inp.fascia : undefined;
   const f = fxFinestre(d, null, fascia).filter(([a, b]) => b - a >= dur).map(([a, b]) => `${toHHMM(a)}–${toHHMM(b)}`);
-  return f.length ? `${dataParlata(d)} (${d}): ${f.join(", ")}` : `${dataParlata(d)} (${d}): nessuno spazio libero di ${dur} minuti${fascia ? ` (${fascia})` : ""}.`;
+  const esito = f.length ? `${dataParlata(d)} (${d}): ${f.join(", ")}` : `${dataParlata(d)} (${d}): nessuno spazio libero di ${dur} minuti${fascia ? ` (${fascia})` : ""}.`;
+  return [gNotaOrari(d), esito].filter(Boolean).join(" ");
 }
 function strumentiSegretaria(turno){
   const lim = CLAUDE_LIMITI && CLAUDE_LIMITI.tools;
@@ -13745,11 +14552,11 @@ function azioneDa(a, RIF){
     const c = cat || categoriaDa(titolo);
     const durata = a.durata_minuti > 0 ? Math.min(600, Math.round(+a.durata_minuti)) : durataTipica(c);
     const fascia = ["mattina", "pranzo", "pomeriggio", "sera"].includes(a.fascia) ? a.fascia : (c === "cena" ? "sera" : c === "pranzo" ? "pranzo" : null);
-    const r = { tipo, on: true, titolo, durata, fascia, dal: dataOk(a.dal) && a.dal >= T ? a.dal : null, entro: dataOk(a.entro) && a.entro >= T ? a.entro : null,
+    const r = { tipo, on: true, titolo, durata, fascia, dal: dataOk(a.dal) && a.dal >= T ? a.dal : null, entro: dataOk(a.entro) ? a.entro : null,
       luogo: String(a.luogo || "").trim(), persone, cat: c, imp };
-    // la proposta di Claude vale solo se è davvero libera; altrimenti la trovo io
+    // La disponibilità si controlla insieme alle altre azioni della stessa risposta.
     const pr = a.proposta && dataOk(a.proposta.data) && oraOk(a.proposta.ora) ? { d: a.proposta.data, s: toMin(a.proposta.ora) } : null;
-    r.proposta = pr && pr.d >= T && liberoPer(pr.d, pr.s, pr.s + durata) ? { d: pr.d, s: pr.s, e: pr.s + durata } : null;
+    r.proposta = pr && pr.d >= T ? { d: pr.d, s: pr.s, e: pr.s + durata } : null;
     return r;
   }
   if (tipo === "sposta" || tipo === "cancella"){
@@ -13804,17 +14611,17 @@ function azioneDa(a, RIF){
   return { tipo: "frase", on: true, r, titolo: r.tipo === "spesa" ? (r.voci || []).join(", ") : r.titolo };
 }
 const durataTipica = c => ({ cena: 120, pranzo: 90, visita: 60, incontro: 60, notaio: 60, cantiere: 60, personale: 60 }[c] || 60);
-// libero davvero: niente impegni sopra (la strada conta), dentro l'orario in cui sei sveglio
-function liberoPer(d, s, e){
-  if (s < awakeFrom() || e > Math.max(awakeTo(), 23 * 60 + 30)) return false;
-  if (d === today() && s < nowMin()) return false;
-  return !busyLabeled(d).some(b => b.src !== "viaggio" && b.s < e && s < b.e);
+// Usa il motore delle proposte per controllare proprio quel minuto, anche fuori dalla griglia di mezz'ora.
+function liberoPer(r, occupati){
+  return !!proposteDi(r, 1, occupati, r.proposta)[0];
 }
 // le proposte per una cosa da programmare (con la fascia: la sera per le cene)
-function proposteDi(r, quante, occupati){
+function proposteDi(r, quante, occupati, esatta){
   const finto = { id: "tmp", titolo: r.titolo, durata: r.durata, imp: r.imp || 2, dal: r.dal, entro: r.entro, luogo: r.luogo, fascia: r.fascia,
     incontro: ["incontro", "visita", "notaio", "cantiere"].includes(r.cat), oraPref: r.fascia === "sera" ? 20 * 60 + 30 : r.fascia === "pranzo" ? 13 * 60 : null };
-  return fxProposte(finto, quante || 1, occupati ? { occupati } : undefined);
+  const opts = { occupati };
+  if (esatta){ opts.da = esatta.d; opts.fino = esatta.d; opts.oraEsatta = esatta.s; }
+  return fxProposte(finto, quante || 1, opts);
 }
 function azioneFrase(a){
   const q = p => `${dataParlata(p.d)} alle ${orario(p.s)}`;
@@ -13831,7 +14638,34 @@ function azioneFrase(a){
 }
 const AZIONE_NOME = { evento: "Appuntamento", da_programmare: "Da programmare", sposta: "Spostamento", cancella: "Da togliere", progetto: "Progetto",
   progetto_avanti: "Progetto", conferma_piano: "Piano", frase: "Da segnare", ricorda: "Da ricordare" };
-function azioneAvviso(a){
+// Gli orari del messaggio non sono ancora nel calendario; valgono anche se
+// l'appuntamento esplicito compare dopo la cosa da programmare.
+function orarioAzione(a){
+  if (!a || !a.on) return null;
+  if (a.tipo === "da_programmare") return a.metti !== false ? a.proposta : null;
+  if (a.tipo !== "evento" && a.tipo !== "sposta") return null;
+  return !a.allDay && a.d && Number.isFinite(a.s) && Number.isFinite(a.e) && a.e > a.s ? a : null;
+}
+function occupatiNelTurno(azioni, esclusa){
+  const giorni = {};
+  for (const a of azioni){
+    if (a === esclusa) continue;
+    const p = orarioAzione(a);
+    if (!p) continue;
+    const margine = a.tipo === "da_programmare" ? 30 : 0;
+    (giorni[p.d] = giorni[p.d] || []).push([p.s - margine, p.e + margine]);
+  }
+  return giorni;
+}
+function azioneAvviso(a, azioni){
+  const ora = orarioAzione(a);
+  if (ora && azioni){
+    const altra = azioni.find(x => {
+      const p = x !== a && orarioAzione(x);
+      return p && p.d === ora.d && p.s < ora.e && p.e > ora.s;
+    });
+    if (altra) return `Nella stessa richiesta si sovrappone a ${altra.titolo}.`;
+  }
   if (a.tipo === "evento" && !a.allDay){
     const sopra = busyLabeled(a.d).filter(b => b.src !== "viaggio" && b.s < a.e && a.s < b.e).map(b => `${b.label} ${toHHMM(b.s)}–${toHHMM(b.e)}`);
     if (sopra.length) return `Si sovrappone a ${elenco(sopra.slice(0, 2))}.`;
@@ -13844,61 +14678,70 @@ function azioneAvviso(a){
 }
 
 // esegue le azioni accese. Torna un riassunto da dire
-async function eseguiAzioni(azioni){
+async function eseguiAzioni(azioni, pianiControllati){
   const T = today();
-  const suGoogle = [], fatte = [], errori = [];
+  const suGoogle = [], esiti = [];
+  const inCoach = titolo => "In Coach: «" + titolo + "».";
   for (const a of azioni.filter(x => x.on)){
     try {
       if (a.tipo === "evento"){
         if (a.allDay){
           const r = capisciFrase(" "); Object.assign(r, { tipo: "evento", titolo: a.titolo, data: a.d, ora: null, fine: null, luogo: a.luogo, nota: a.nota, con: a.persone });
-          if (gApi()){ const ris = await gScrivi([{ titolo: a.titolo, d: a.d, allDay: true, luogo: a.luogo, nota: a.nota }]); if (!ris[0].ok) throw new Error(ris[0].errore); }
-          else salvaFrase(r, true);
+          if (calDiretto()){
+            const [ris] = await calScrivi([{ titolo: a.titolo, d: a.d, allDay: true, luogo: a.luogo, nota: a.nota }]);
+            esiti.push(ricevutaCalendario(a.titolo, ris));
+            if (ris && !ris.ok && !ris.incerto){ salvaFrase(r, true); esiti.push(inCoach(a.titolo)); }
+          } else { salvaFrase(r, true); esiti.push("Solo nell’agenda di Coach: «" + a.titolo + "»."); }
         } else {
           const x = fxNuovo({ titolo: a.titolo, durata: a.e - a.s, imp: a.imp || importanzaDi(a.titolo, null, { cat: a.cat }), luogo: a.luogo, nota: a.nota, cat: a.cat,
             incontro: ["incontro", "visita", "notaio", "cantiere"].includes(a.cat), quando: { d: a.d, s: a.s, e: a.e }, persone: a.persone });
           if (calDiretto()) suGoogle.push({ x, p: x.quando });
+          else esiti.push("Solo in Coach, tra le cose da programmare: «" + a.titolo + "».");
         }
-        fatte.push(a.titolo);
       } else if (a.tipo === "da_programmare"){
         const x = fxNuovo({ titolo: a.titolo, durata: a.durata, imp: a.imp || 2, luogo: a.luogo, cat: a.cat, fascia: a.fascia, dal: a.dal, entro: a.entro,
           incontro: ["incontro", "visita", "notaio", "cantiere"].includes(a.cat), persone: a.persone,
           oraPref: a.fascia === "sera" ? 20 * 60 + 30 : a.fascia === "pranzo" ? 13 * 60 : null });
         if (a.proposta && a.metti !== false && calDiretto()) suGoogle.push({ x, p: { d: a.proposta.d, s: a.proposta.s, e: a.proposta.e } });
-        fatte.push(a.titolo);
+        else esiti.push("Da programmare in Coach: «" + a.titolo + "».");
       } else if (a.tipo === "sposta"){
         if (a.g){ if (!gApi()) throw new Error("per spostarlo apri Coach dentro Claude"); await gSposta(a.g, a.d, a.s, a.e); }
-        else if (a.o){ const o = S.oneoffs.find(y => y.id === a.o.id); if (o){ o.date = a.d; o.endDate = a.d; o.start = toHHMM(a.s); o.end = toHHMM(a.e); } }
-        fatte.push(`${a.titolo} spostato`);
+        else { const o = a.o && S.oneoffs.find(y => y.id === a.o.id); if (!o) throw new Error("l’evento non è più in Coach");
+          o.date = a.d; o.endDate = a.d; o.start = toHHMM(a.s); o.end = toHHMM(a.e); }
+        esiti.push(`«${a.titolo}» spostato ${a.g ? "su Google Calendar" : "in Coach"}.`);
       } else if (a.tipo === "cancella"){
         if (a.g){ if (!gApi()) throw new Error("per toglierlo apri Coach dentro Claude"); await gCancella(a.g); }
-        else if (a.o) S.oneoffs = S.oneoffs.filter(y => y.id !== a.o.id);
-        fatte.push(`${a.titolo} tolto`);
+        else { if (!a.o || !S.oneoffs.some(y => y.id === a.o.id)) throw new Error("l’evento non è più in Coach");
+          S.oneoffs = S.oneoffs.filter(y => y.id !== a.o.id); }
+        esiti.push(`«${a.titolo}» tolto ${a.g ? "da Google Calendar" : "da Coach"}.`);
       } else if (a.tipo === "progetto"){
         S.progetti = (S.progetti || []).concat([{ id: nuovoId("pj"), titolo: a.titolo, entro: a.entro, minuti: a.minuti || 120, fatti: a.fatti || 0, imp: a.imp || 1, creato: T, stato: "aperto", log: [] }]);
         progettiOggi();
-        fatte.push(`progetto ${a.titolo}`);
+        esiti.push(inCoach(a.titolo));
       } else if (a.tipo === "progetto_avanti"){
         progettoAvanti(a.p, a.minuti); progettiOggi();
-        fatte.push(`${a.titolo}: +${minutiCorti(a.minuti)}`);
+        esiti.push(inCoach(`${a.titolo}, +${minutiCorti(a.minuti)}`));
       } else if (a.tipo === "conferma_piano"){
-        const p = pianoBozza(T);
-        await new Promise(ok => confermaPiano(T, p, ok));
-        fatte.push("il piano di oggi");
+        const p = pianiControllati?.get(a) || pianoBozza(T);
+        esiti.push(await new Promise(ok => confermaPiano(T, p, ok)));
       } else if (a.tipo === "frase"){
         salvaFrase(a.r, true);
-        fatte.push(a.titolo);
+        esiti.push(inCoach(a.titolo));
       } else if (a.tipo === "ricorda"){
         memoriaMetti(a.titolo);
-        fatte.push(a.titolo);
+        esiti.push(inCoach(a.titolo));
       }
-    } catch(e){ errori.push(`${a.titolo}: ${e && e.message ? e.message : e}`); }
+    } catch(e){ esiti.push(`«${a.titolo}»: ${e && e.message ? e.message : e}.`); }
   }
   save();
-  let ris = null;
-  if (suGoogle.length) ris = await fxMandaMolti(suGoogle);
-  const andati = ris ? ris.filter(r => r && r.ok).length : 0;
-  return { fatte, errori, andati, google: suGoogle.length };
+  if (suGoogle.length){
+    await fxMandaMolti(suGoogle, ris => ris.forEach((r, i) => {
+      const titolo = suGoogle[i].x.titolo;
+      esiti.push(ricevutaCalendario(titolo, r));
+      if (!r.ok && !r.incerto) esiti.push(inCoach(titolo) + " Resta da programmare.");
+    }));
+  }
+  return esiti.join(" ") || "Nessuna azione selezionata.";
 }
 // una cosa da programmare nuova (o un appuntamento con l'orario già deciso)
 function fxNuovo(o){
@@ -13927,6 +14770,30 @@ async function conversaManda(testo, voce){
   if (c.turni.length > CV_MAX) c.turni.splice(0, c.turni.length - CV_MAX);
   salvaSolo();
   conversaDisegna();
+  const minutiAdesso = minutiDomandaAdesso(testo);
+  if (minutiAdesso !== undefined){
+    turno.testo = consiglioAdesso(minutiAdesso).testo;
+    turno.stato = "fatto";
+    save(); conversaDisegna();
+    if (voce && segr().voce !== false) parla(turno.testo);
+    return;
+  }
+  const minutiPersi = rimediaMinutiFrase(testo);
+  if (minutiPersi !== null){
+    const sim = simulaTempoPerso(minutiPersi,false,null);
+    const primaLibera = sim.righe.filter(v=>v.orario).sort((a,b)=>a.orario.s-b.orario.s)[0];
+    const fuori = sim.righe.find(v=>!v.orario);
+    const parti = [`Oggi hai perso ${sim.persi} minuti che risultavano liberi.`];
+    if (primaLibera) parti.push(`Puoi iniziare «${primaLibera.titolo}» alle ${toHHMM(primaLibera.orario.s)}.`);
+    if (fuori) parti.push(`Per «${fuori.titolo}» mancano ${fuori.manca} minuti consecutivi.`);
+    if (sim.fissi.length) parti.push(`Nel periodo trascorso era previsto «${sim.fissi[0].label}».`);
+    turno.testo = parti.join(" ");
+    const nota = gNotaOrari(sim.d);
+    if (nota) turno.testo += " " + nota;
+    turno.stato = "fatto";
+    save(); conversaDisegna(); openRimedia(minutiPersi);
+    return;
+  }
   if (!claudePronto()){
     // senza Claude: le regole di sempre, e niente risposta a parole
     const lista = capisciTutto(testo);
@@ -13971,14 +14838,16 @@ async function conversaManda(testo, voce){
     turno.testo = String((j && j.risposta) || "").trim() || "Fatto.";
     const azioni = (Array.isArray(j && j.azioni) ? j.azioni : []).map(a => azioneDa(a, rif)).filter(Boolean);
     // due proposte nello stesso posto, o una proposta non libera: la ricalcolo
-    const occupati = {}, corretti = [];
+    const occupati = occupatiNelTurno(azioni.filter(a => a.tipo !== "da_programmare")), corretti = [];
     const grezze = Array.isArray(j && j.azioni) ? j.azioni : [];
     for (const a of azioni) if (a.tipo === "da_programmare"){
       const chiesta = (grezze.find(g => g && cap(String(g.titolo || "").trim()) === a.titolo) || {}).proposta;
-      if (a.proposta && (occupati[a.proposta.d] || []).some(([s, e]) => s < a.proposta.e && a.proposta.s < e)) a.proposta = null;
+      if (a.proposta && !liberoPer(a, occupati)) a.proposta = null;
       if (!a.proposta){
-        const p = proposteDi({ ...a, dal: a.dal || addDays(today(), 1) }, 1, occupati)[0];
+        const dal = a.dal || (a.entro === today() ? today() : addDays(today(), 1));
+        const p = proposteDi({ ...a, dal }, 1, occupati)[0];
         if (p){ a.proposta = { d: p.d, s: p.s, e: p.e }; if (chiesta) corretti.push(`${minuscola(a.titolo)}: ${dataParlata(p.d)} alle ${orario(p.s)}`); }
+        else if (chiesta) corretti.push(`${minuscola(a.titolo)} resta da programmare`);
       }
       if (a.proposta) (occupati[a.proposta.d] = occupati[a.proposta.d] || []).push([a.proposta.s - 30, a.proposta.e + 30]);
     }
@@ -14020,7 +14889,7 @@ function turnoHTML(t, i){
           <div class="rmeta" style="text-transform:uppercase;letter-spacing:.04em;font-size:11px">${esc(AZIONE_NOME[a.tipo] || "")}${a.cat && CATEGORIE[a.cat] && a.tipo !== "frase" ? ` · ${esc(CATEGORIE[a.cat].nome.toLowerCase())}` : ""}</div>
           <div class="rtitle" style="font-size:15px">${esc(a.titolo)}</div>
           <div class="rmeta">${esc(azioneFrase(a))}</div>
-          ${aperte && azioneAvviso(a) ? `<div class="rmeta" style="color:var(--warn)">${esc(azioneAvviso(a))}</div>` : ""}
+          ${aperte && azioneAvviso(a, az) ? `<div class="rmeta" style="color:var(--warn)">${esc(azioneAvviso(a, az))}</div>` : ""}
           ${aperte && a.tipo === "da_programmare" ? `<div class="why" style="margin:7px 0 0"><button data-cvaltro="${i}:${k}">Altro orario</button>${a.proposta ? `<button data-cvdopo="${i}:${k}" class="${a.metti === false ? "on" : ""}">${a.metti === false ? "Resta da programmare" : "Lascialo da programmare"}</button>` : ""}</div>` : ""}
         </div></div>`).join("")}
       ${aperte ? `<div class="btnrow"><button class="btn primary" id="cv-ok-${i}" style="flex:2">${az.some(a => a.on && (a.tipo === "evento" || a.tipo === "sposta" || a.tipo === "cancella" || (a.tipo === "da_programmare" && a.proposta && a.metti !== false))) && calDiretto() ? "Conferma e metti su Google" : "Conferma"}</button><button class="btn ghost" id="cv-no-${i}" style="flex:1">Lascia stare</button></div>`
@@ -14028,6 +14897,27 @@ function turnoHTML(t, i){
     </div>` : ""}`;
 }
 let CV_TUTTI = false;
+let CV_BOZZA = "";   // privata di questa pagina, solo finché rimane aperta
+
+// Il render può arrivare mentre si scrive, anche per una lettura del calendario.
+function conservaBozzaChat(){
+  const prima = document.getElementById("cv-t");
+  const attiva = !!prima && document.activeElement === prima;
+  if (prima) CV_BOZZA = prima.value;
+  const selezione = attiva ? [prima.selectionStart, prima.selectionEnd, prima.selectionDirection] : null;
+  const scorrimento = prima ? prima.scrollTop : 0;
+  return () => {
+    const campo = document.getElementById("cv-t");
+    if (!campo || campo === prima) return;
+    campo.value = CV_BOZZA;
+    if (selezione){
+      campo.focus({ preventScroll: true });
+      campo.setSelectionRange(...selezione);
+    }
+    campo.scrollTop = scorrimento;
+  };
+}
+
 function conversaHTML(){
   const c = conversa();
   const quanti = CV_TUTTI ? 40 : 8;
@@ -14059,51 +14949,75 @@ function conversaHTML(){
 function conversaDisegna(){
   const box = document.getElementById("cv-sez");
   if (!box || TAB !== "oggi"){ return; }
-  const scritto = (document.getElementById("cv-t") || {}).value || "";
+  const ripristinaBozza = conservaBozzaChat();
   box.innerHTML = conversaHTML();
-  const ta = document.getElementById("cv-t"); if (ta && scritto) ta.value = scritto;
   bindConversa();
+  ripristinaBozza();
 }
 function bindConversa(){
   const c = conversa();
   const ta = document.getElementById("cv-t");
-  const invia = voce => { const t = ta.value.trim(); if (!t) return; ta.value = ""; sbloccaVoce(); conversaManda(t, voce); };
+  const invia = (voce, campo = ta) => {
+    const t = campo.value.trim();
+    if (!t) return;
+    campo.value = "";
+    CV_BOZZA = "";
+    sbloccaVoce(); conversaManda(t, voce);
+  };
   const bi = document.getElementById("cv-invia"); if (bi) bi.onclick = () => invia(false);
   if (ta) ta.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey && !/Mobi|Android|iPhone/i.test(navigator.userAgent)){ e.preventDefault(); invia(false); } };
   const mic = document.getElementById("cv-mic");
   if (mic) mic.onclick = () => {
     sbloccaVoce();
-    detta(t => { const testo = String(t || "").trim(); if (!testo) return; ta.value = (ta.value.trim() ? ta.value.trim() + " " : "") + testo; invia(true); },
+    detta(t => {
+      const testo = String(t || "").trim();
+      if (!testo) return;
+      const campo = document.getElementById("cv-t") || ta;
+      campo.value = (campo.value.trim() ? campo.value.trim() + " " : "") + testo;
+      invia(true, campo);
+    },
       on => { mic.classList.toggle("ascolta", on); mic.textContent = on ? "Ti ascolto…" : "Parla"; }, { lunga: true });
   };
   const ferma = document.getElementById("cv-ferma"); if (ferma) ferma.onclick = () => { if (CONV_CTL) CONV_CTL.abort(); else { const t = c.turni[c.turni.length - 1]; if (t && t.stato === "pensa"){ t.stato = "fatto"; t.testo = t.testo || "Va bene, lascio stare."; salvaSolo(); conversaDisegna(); } } };
   const prima = document.getElementById("cv-prima"); if (prima) prima.onclick = () => { CV_TUTTI = true; conversaDisegna(); };
   const nuova = document.getElementById("cv-nuova");
-  if (nuova) nuova.onclick = () => { if (!confirm("Ricomincio da capo? I messaggi di prima si cancellano; quello che hai già confermato resta, e anche le cose che tengo a mente.")) return; if (CONV_CTL) CONV_CTL.abort(); S.conversa = { turni: [] }; CV_TUTTI = false; save(); conversaDisegna(); };
+  if (nuova) nuova.onclick = () => { if (!confirm("Ricomincio da capo? I messaggi di prima si cancellano; quello che hai già confermato resta, e anche le cose che tengo a mente.")) return; if (CONV_CTL) CONV_CTL.abort(); ta.value = ""; CV_BOZZA = ""; S.conversa = { turni: [] }; CV_TUTTI = false; save(); conversaDisegna(); };
   document.querySelectorAll("[data-cvleggi]").forEach(b => b.onclick = () => { if (PARLA_ORA){ taci(); aggiornaTastoParla(); return; } const t = c.turni[+b.dataset.cvleggi]; if (t){ sbloccaVoce(); parla(t.testo); aggiornaTastoParla(); } });
   document.querySelectorAll("[data-cvon]").forEach(b => b.onclick = () => { const [i, k] = b.dataset.cvon.split(":").map(Number); const a = c.turni[i] && c.turni[i].azioni[k]; if (a){ a.on = !a.on; salvaSolo(); conversaDisegna(); } });
   document.querySelectorAll("[data-cvdopo]").forEach(b => b.onclick = () => { const [i, k] = b.dataset.cvdopo.split(":").map(Number); const a = c.turni[i] && c.turni[i].azioni[k]; if (a){ a.metti = a.metti === false ? true : false; salvaSolo(); conversaDisegna(); } });
-  document.querySelectorAll("[data-cvaltro]").forEach(b => b.onclick = () => { const [i, k] = b.dataset.cvaltro.split(":").map(Number); const a = c.turni[i] && c.turni[i].azioni[k]; if (a) sceltaOrario(a, () => { salvaSolo(); conversaDisegna(); }); });
+  document.querySelectorAll("[data-cvaltro]").forEach(b => b.onclick = () => { const [i, k] = b.dataset.cvaltro.split(":").map(Number); const a = c.turni[i] && c.turni[i].azioni[k]; if (a) sceltaOrario(a, c.turni[i].azioni, () => { salvaSolo(); conversaDisegna(); }); });
   c.turni.forEach((t, i) => {
     const ok = document.getElementById("cv-ok-" + i), no = document.getElementById("cv-no-" + i);
     if (ok) ok.onclick = async () => {
       if (t.stato !== "da confermare") return;
-      ok.disabled = true; ok.textContent = "Faccio…";
-      t.stato = "in corso"; t.inCorsoAt = Date.now();
-      const r = await eseguiAzioni(t.azioni);
+      ok.disabled = true; ok.textContent = "Controllo gli orari…";
+      const firmaPrima = JSON.stringify(t.azioni);
+      const scelta = await verificaRichiestaChat(t.azioni);
+      const attuale = turnoVivo(t);
+      if (!scelta || !attuale || attuale.stato !== "da confermare" || JSON.stringify(attuale.azioni) !== firmaPrima){
+        if (scelta) toast("La proposta è cambiata. Controlla le scelte aggiornate.");
+        conversaDisegna(); return;
+      }
+      attuale.stato = "in corso"; attuale.inCorsoAt = Date.now();
+      attuale.azioni = scelta.azioni;
+      save();
+      let esito;
+      try { esito = await eseguiAzioni(scelta.azioni, scelta.piani); }
+      catch(e){ esito = "Invio interrotto. Controlla Coach e il calendario prima di ripetere le azioni."; }
       const v = turnoVivo(t) || t;
       v.stato = "confermate";
-      v.esito = r.errori.length ? `Fatto in parte. Non è andato: ${r.errori.join("; ")}.` : r.google ? (r.andati === r.google ? `Fatto: ${r.andati === 1 ? "è" : `${r.andati} cose sono`} sul tuo Google Calendar.` : `Fatto, ma ${r.google - r.andati} non sono andate su Google: le trovi fra le cose da programmare.`) : "Fatto.";
+      v.esito = esito;
       save(); render(); toast(v.esito);
     };
     if (no) no.onclick = () => { t.stato = "lasciate"; save(); conversaDisegna(); };
   });
 }
 // gli orari possibili per una cosa da programmare
-function sceltaOrario(a, dopo){
-  const altre = proposteDi(a, 8);
+function sceltaOrario(a, azioni, dopo){
+  const altre = proposteDi(a, 8, occupatiNelTurno(azioni, a)), notaOrari = gNotaOrari();
   const f = foglio(`<h3>${esc(a.titolo)}</h3>
-    <div class="hint" style="margin:-8px 0 12px">${esc(minutiCorti(a.durata))}${a.fascia ? `, ${a.fascia === "sera" ? "la sera" : a.fascia === "pranzo" ? "a pranzo" : "di " + a.fascia}` : ""}. Gli spazi liberi:</div>
+    <div class="hint" style="margin:-8px 0 12px">${esc(minutiCorti(a.durata))}${a.fascia ? `, ${a.fascia === "sera" ? "la sera" : a.fascia === "pranzo" ? "a pranzo" : "di " + a.fascia}` : ""}. Orari proposti.</div>
+    ${notaOrari ? `<div class="hint">${esc(notaOrari)}</div>` : ""}
     ${altre.length ? `<div class="card">${altre.map((p, k) => `<button class="actrow" data-so="${k}"><div class="rbody"><div class="rtitle" style="font-size:15px">${esc(cap(dataParlata(p.d)))} alle ${orario(p.s)}</div><div class="rmeta">${esc(fxPerche(p))}</div></div></button>`).join("")}</div>`
       : `<div class="hint">Nei prossimi giorni non trovo uno spazio libero abbastanza lungo.</div>`}
     <div class="btnrow"><button class="btn ghost wide" id="so-x">Annulla</button></div>`);
@@ -15850,6 +16764,19 @@ const GSERVER = "Google Calendar";
 const GAPI = { calendari: null, account: "", calAt: 0, errore: "", codice: "", inCorso: null, at: 0, grezzi: null };
 const GCACHE = "coach.gcal.v1";
 const gApi = () => IN_CLAUDE && !!CAP.mcp;
+function gNotaOrari(d){
+  if (!S.gcalOn) return "Google Calendar è spento. Le proposte si basano solo su Coach.";
+  if (IN_CLAUDE){
+    if (GAPI.codice === "parziale") return GAPI.errore;
+    if (!gApi() || GAPI.errore || !GAPI.at) return "Google Calendar non è aggiornato. Gli orari proposti sono da verificare.";
+    if (!(GAPI.calendari || []).some(c => !S.gcalOff.includes(gCalKey(c)))) return "Nessun calendario attivo. Le proposte si basano solo su Coach.";
+    if (d){
+      const letto = iso(new Date(GAPI.at));
+      if (d < addDays(letto, -21) || d >= addDays(letto, 90)) return "La data è fuori dal periodo letto da Google Calendar. Gli orari proposti sono da verificare.";
+    }
+  } else if (GCAL.status !== "ok") return "Google Calendar non è disponibile qui. Le proposte si basano sui dati di Coach.";
+  return "";
+}
 const pad2 = n => String(n).padStart(2, "0");
 const gOra = (d, min) => min >= 1440 ? `${addDays(d, 1)}T00:00:00` : `${d}T${pad2(Math.floor(min / 60))}:${pad2(min % 60)}:00`;
 function gErrore(e){
@@ -15912,9 +16839,31 @@ function gcalDaCache(){
     const c = JSON.parse(localStorage.getItem(GCACHE) || "null");
     if (!c || !Array.isArray(c.ev)) return;
     GAPI.calendari = c.cal || []; GAPI.account = c.account || ""; GAPI.calAt = 0;
+    if (typeof c.avviso === "string" && c.avviso){ GAPI.codice = "parziale"; GAPI.errore = c.avviso; }
     gIngest(c.ev);
     GCAL.status = "ok"; GCAL.at = c.at || null; GCAL.err = null;
   } catch(e){}
+}
+// Una risposta troncata o una lettura secondaria interrotta restituisce gli eventi disponibili con un esito parziale.
+async function gPagineEventi(cal, richiesta, limite){
+  const eventi = [];
+  let token = null, pagine = 0;
+  do {
+    const inp = { ...richiesta };
+    if (!cal.primario) inp.calendarId = cal.id;
+    if (token) inp.pageToken = token;
+    try {
+      const r = await CAP.mcp.callTool(GSERVER, "list_events", inp, { cache: false });
+      const p = r.payload || {}, pagina = p.events || p.items;
+      if (!Array.isArray(pagina)) throw new Error("La risposta del calendario è incompleta.");
+      eventi.push(...pagina);
+      token = p.nextPageToken || null;
+    } catch(e){
+      if (cal.primario || gPermesso(e && e.code) || (e && e.code === "needs_reauth")) throw e;
+      return { eventi, completo: false };
+    }
+  } while (token && ++pagine < limite);
+  return { eventi, completo: !token };
 }
 // rifà GCAL dagli ultimi eventi letti (per esempio dopo aver spento un calendario)
 function gcalDaUltimi(){ if (GAPI.grezzi) try { gIngest(GAPI.grezzi); } catch(e){} }
@@ -15922,51 +16871,75 @@ function gcalDaUltimi(){ if (GAPI.grezzi) try { gIngest(GAPI.grezzi); } catch(e)
 async function gLeggi(forza){
   if (!gApi() || !S || !S.gcalOn) return false;
   if (GAPI.inCorso) return GAPI.inCorso;
-  if (!forza && GAPI.at && Date.now() - GAPI.at < 60000) return true;
-  GAPI.inCorso = (async () => {
+  if (!forza && GAPI.at && !GAPI.errore && Date.now() - GAPI.at < 60000) return true;
+  GAPI.inCorso = Promise.resolve().then(async () => {
     try {
       if (!GAPI.calendari || !GAPI.calAt || Date.now() - GAPI.calAt > 6 * 3600000){
-        const r = await CAP.mcp.callTool(GSERVER, "list_calendars", { pageSize: 100 });
-        GAPI.calendari = gCalendari(r.payload);
+        const calendari = [], tokenVisti = new Set();
+        let pagina = null;
+        do {
+          const inp = { pageSize: 100 };
+          if (pagina) inp.pageToken = pagina;
+          const r = await CAP.mcp.callTool(GSERVER, "list_calendars", inp, { cache: false });
+          const p = r.payload || {}, elenco = p.calendars || p.items;
+          if (!Array.isArray(elenco)) throw new Error("Non riesco a leggere l’elenco dei calendari.");
+          calendari.push(...elenco);
+          pagina = p.nextPageToken || null;
+          if (pagina && (tokenVisti.has(pagina) || tokenVisti.size >= 7)) throw new Error("L’elenco dei calendari è incompleto.");
+          tokenVisti.add(pagina);
+        } while (pagina);
+        const accountPrima = GAPI.account;
+        GAPI.calendari = gCalendari({ calendars: calendari });
+        if (accountPrima && accountPrima !== GAPI.account){
+          gIngest([]); GAPI.at = 0;
+          try { localStorage.removeItem(GCACHE); } catch(e){}
+        }
         GAPI.calAt = Date.now();
       }
       const T = today(), da = addDays(T, -21), a = addDays(T, 90);
-      const tutti = [];
+      const esclusi = new Set(S.gcalOff);
+      const tutti = [], incompleti = [];
       for (const c of GAPI.calendari){
-        if (S.gcalOff.includes(gCalKey(c))) continue;
-        let token = null, giri = 0;
-        do {
-          const inp = { startTime: `${da}T00:00:00`, endTime: `${a}T00:00:00`, pageSize: 250, orderBy: "startTime" };
-          if (!c.primario) inp.calendarId = c.id;
-          if (token) inp.pageToken = token;
-          let r;
-          try { r = await CAP.mcp.callTool(GSERVER, "list_events", inp, { cache: false }); }
-          catch(e){ if (c.primario || gPermesso(e && e.code) || (e && e.code === "needs_reauth")) throw e; break; }   // un calendario secondario che non si legge non ferma il resto
-          const p = r.payload || {};
-          for (const ev of (p.events || p.items || [])) tutti.push({ ...gSnello(ev), status: ev.status, _cal: c.id, _calNome: c.nome });
-          token = p.nextPageToken || null;
-        } while (token && ++giri < 8);
+        if (esclusi.has(gCalKey(c))) continue;
+        const q = { startTime: `${da}T00:00:00`, endTime: `${a}T00:00:00`, pageSize: 250, orderBy: "startTime" };
+        const { eventi, completo } = await gPagineEventi(c, q, 8);
+        const letti = new Map(eventi.map(ev => [ev.id, { ...gSnello(ev), status: ev.status, _cal: c.id, _calNome: c.nome }]));
+        if (!completo){
+          incompleti.push(c.nome);
+          // Una pagina mancante non cancella gli impegni già noti. Vince ogni evento appena riletto, anche una cancellazione.
+          for (const ev of GAPI.grezzi || []) if (ev._cal === c.id && !letti.has(ev.id)) letti.set(ev.id, ev);
+        }
+        for (const ev of letti.values()) tutti.push(ev);
+      }
+      if (!S.gcalOn) return false;
+      if (esclusi.size !== S.gcalOff.length || S.gcalOff.some(k => !esclusi.has(k))){
+        GAPI.at = 0;
+        setTimeout(() => gcalAggiorna(true), 0);
+        return false;
       }
       gIngest(tutti);
-      try { localStorage.setItem(GCACHE, JSON.stringify({ at: Date.now(), account: GAPI.account, cal: GAPI.calendari, ev: tutti })); } catch(e){}
-      GAPI.errore = ""; GAPI.codice = ""; GAPI.at = Date.now();
-      GCAL.status = "ok"; GCAL.err = null; GCAL.at = Date.now();
-      try { fxAbbina(); } catch(e){}
-      return true;
+      GAPI.codice = incompleti.length ? "parziale" : "";
+      GAPI.errore = incompleti.length ? `Lettura parziale (${incompleti.join(", ")}). Gli orari proposti sono da verificare.` : "";
+      GAPI.at = Date.now();
+      try { localStorage.setItem(GCACHE, JSON.stringify({ at: GAPI.at, account: GAPI.account, cal: GAPI.calendari, ev: tutti, avviso: GAPI.errore })); } catch(e){}
+      GCAL.status = "ok"; GCAL.err = null; GCAL.at = GAPI.at;
+      if (!incompleti.length) try { fxAbbina(); } catch(e){}
+      return !incompleti.length;
     } catch(e){
       GAPI.errore = gErrore(e); GAPI.codice = (e && e.code) || "";
       if (!GCAL.list.length){ GCAL.status = "err"; GCAL.err = GAPI.errore; }
       return false;
-    } finally { GAPI.inCorso = null; }
-  })();
+    }
+  }).finally(() => { GAPI.inCorso = null; });
   return GAPI.inCorso;
 }
 // legge e, se è cambiato qualcosa, ridisegna (senza toccare un foglio aperto)
 async function gcalAggiorna(forza){
   const prima = JSON.stringify(GCAL.list.map(g => [g.key, g.date, g.s, g.e, g.label]));
+  const avvisoPrima = gNotaOrari();
   const ok = await gLeggi(forza);
   const dopo = JSON.stringify(GCAL.list.map(g => [g.key, g.date, g.s, g.e, g.label]));
-  if (prima !== dopo || !ok || forza){
+  if (prima !== dopo || avvisoPrima !== gNotaOrari() || !ok || forza){
     try { runEngine(); } catch(e){}
     if (!document.querySelector(".sheet")) render();
   }
@@ -16013,10 +16986,15 @@ async function gScrivi(evs){
       const r = await CAP.mcp.callTool(GSERVER, "create_event", inp);
       const p = r.payload || {};
       const id = (p && (p.id || (p.event && p.event.id))) || "";
-      out.push({ ok: true, key: id ? "g:" + id : null, idLocale: null, id });
-    } catch(e){ out.push({ ok: false, errore: gErrore(e), codice: e && e.code }); }
+      out.push(id ? { ok: true, key: "g:" + id, idLocale: null, id } : { ok: false, incerto: true });
+    } catch(e){
+      const codice = e && e.code;
+      const rifiutato = ["needs_reauth", "server_not_connected", "server_not_found", "selection_required", "not_in_manifest",
+        "approval_required", "consent_required", "blocked_by_policy", "not_granted", "capability_disabled", "capability_removed", "rate_limited"].includes(codice);
+      out.push({ ok: false, incerto: !rifiutato, errore: codice === "rate_limited" ? "Riprova più tardi." : gErrore(e), codice });
+    }
   }
-  if (out.some(r => r.ok)) setTimeout(() => gcalAggiorna(true), 400);
+  if (out.some(r => r.ok || r.incerto)) setTimeout(() => gcalAggiorna(true), 400);
   return out;
 }
 // sposta un evento di Google (una volta sola, anche se si ripete)
